@@ -69,7 +69,7 @@ def get_state_embedder(env):
     elif isinstance(env.unwrapped, bounce.BounceMetaEnv):
         return BounceEmbedder
     elif isinstance(env.unwrapped, miniwob.fake_inbox_scroll_vectorized.FakeInboxScrollVectorizedMetaEnv):
-        return MiniWobVectorizedEmbedder
+        return MiniWobVectorizedEmbedderV2
     elif isinstance(env.unwrapped, miniwob.inbox.InboxMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox.FakeInboxMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox_scroll.FakeInboxScrollMetaEnv):
         return MiniWobEmbedder
     # Dependencies on OpenGL, so only load if absolutely necessary
@@ -1089,6 +1089,56 @@ class PositionalEncoding(nn.Module):
         return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)"""
 
 
+class MiniWobVectorizedEmbedderV2(Embedder):
+    """Embedder for SimpleGridEnv states.
+
+    Concretely, embeds (x, y) separately with different embeddings for each cell.
+    """
+
+    def __init__(self, observation_space, embed_dim, use_dom=False):
+        """Constructs for SimpleGridEnv.
+
+        Args:
+            observation_space (spaces.Box): limits for the observations to embed.
+        """
+        super().__init__(embed_dim)
+
+        assert all(dim == 0 for dim in observation_space.feature_space["screenshot"].low)
+        assert observation_space.feature_space["screenshot"].dtype == np.int
+
+        hidden_size = 32
+        self._embedders = nn.ModuleList(
+                [nn.Embedding(dim + 1, hidden_size) for dim in observation_space.feature_space["screenshot"].high])
+        self._fc_layer = nn.Linear(hidden_size * len(observation_space.feature_space["screenshot"].high), 256)
+        self._final_fc_layer = nn.Linear(256, embed_dim)
+
+    def forward(self, obs):
+        if isinstance(obs, list):
+            question = [o.question for o in obs]
+            dom = [o.dom for o in obs]
+            screenshot = torch.stack([o.screenshot for o in obs])
+        else:
+            question = [obs.question]
+            dom = [obs.dom]
+            screenshot = obs.screenshot.unsqueeze(0)
+        
+        # Check batch size
+        assert len(question) == screenshot.shape[0], "Batch size mismatch"
+        B = len(question)
+
+        tensor = screenshot.int().to(device)
+        embeds = []
+        for i in range(tensor.shape[1]):
+            try:
+                embeds.append(self._embedders[i](tensor[:, i]))
+            except IndexError as e:
+                print(f"IndexError at {i}")
+                print(f"Vals: {tensor[:, i]}")
+                print(f"embedder dim {self._embedders[i].num_embeddings}")
+                raise e
+        return self._final_fc_layer(F.relu(self._fc_layer(torch.cat(embeds, -1))))
+
+
 class MiniWobVectorizedEmbedder(Embedder):
     def __init__(self, observation_space, embed_dim, use_dom=False):
         super().__init__(embed_dim)
@@ -1099,14 +1149,6 @@ class MiniWobVectorizedEmbedder(Embedder):
                 nn.ReLU(),
                 nn.Linear(hidden_size, embed_dim),
         )
-        self.instruction_embedder = nn.Sequential(
-            nn.Linear(10, 64),
-            nn.ReLU(),
-            nn.Linear(64, 128),
-            nn.ReLU(),
-            nn.Linear(128, embed_dim)
-        )
-        self.linear = nn.Linear(embed_dim * 2, embed_dim)
 
     def forward(self, obs):
 
@@ -1123,19 +1165,8 @@ class MiniWobVectorizedEmbedder(Embedder):
         assert len(question) == screenshot.shape[0], "Batch size mismatch"
         B = len(question)
 
-        tensor_questions = []
-        for q in question:
-            format_number = lambda num: '1st' if num == 0 else '2nd' if num == 1 else '3rd' if num == 2 else f'{num+1}th'
-            tensor_inputs = [1 if format_number(i) in q else 0 for i in range(7)] + [1 if i in q else 0 for i in ['small', 'medium', 'large']]
-            tensor_questions.append(tensor_inputs)
-
-        tensor_questions = torch.FloatTensor(tensor_questions).to(device)
         tensor_screenshot = screenshot.float().to(device)
-        question_embedding = self.instruction_embedder(tensor_questions)
-        state_embedding = self.state_embedder(tensor_screenshot)
-        res = torch.cat([question_embedding, state_embedding], dim=1).reshape(B, -1)
-        res = self.linear(res)
-        return res
+        return self.state_embedder(tensor_screenshot)
 
 
 class MiniWobEmbedder(Embedder):

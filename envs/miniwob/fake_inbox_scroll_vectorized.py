@@ -18,7 +18,7 @@ import render
 import meta_exploration
 from envs.miniwob.inbox import EmailInboxObservation
 from envs.miniwob.constants import NUM_INSTANCES
-from envs.miniwob.fake_inbox_scroll import FakeInboxScrollMetaEnv, NUM_EMAILS, SIZES, EMAIL_1, TEXT_MAX_LENGTH, ASCII_CHARSET
+from envs.miniwob.fake_inbox_scroll import FakeInboxScrollMetaEnv, NUM_EMAILS, SIZES, EMAIL_1, TEXT_MAX_LENGTH, ASCII_CHARSET, INBOX_UP
 
 
 class FakeInboxScrollVectorizedMetaEnv(FakeInboxScrollMetaEnv):
@@ -42,7 +42,7 @@ class FakeInboxScrollVectorizedMetaEnv(FakeInboxScrollMetaEnv):
         self.observation_space = gym.spaces.Dict({
             "observation": gym.spaces.Sequence(
                 gym.spaces.Dict({
-                    'screenshot': gym.spaces.Box(low=0, high=1, shape=(NUM_EMAILS * len(SIZES),), dtype=np.uint8),
+                    'screenshot': gym.spaces.Box(low=np.array([0] * 6), high=np.array([1, 3, 7, 3, 6, 2]), dtype=np.int),
                     'question': gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET)
                 })
             ),
@@ -53,44 +53,70 @@ class FakeInboxScrollVectorizedMetaEnv(FakeInboxScrollMetaEnv):
     
 
     def _step(self, action):
-        if self.exploitation:
-            states = [{
-                "screenshot": np.zeros((NUM_EMAILS * len(SIZES))),
-                "question": "None",
-                "dom": "None"
-            } for _ in range(NUM_INSTANCES)]
-            reward = [0] * NUM_INSTANCES
-            info = [None] * NUM_INSTANCES
-            done = [True] * NUM_INSTANCES
-        else:
-            self.cur_states = [self._get_next_state(cur_state, a) for cur_state, a in zip(self.cur_states, action)]
-            states = []
-            for i, (idx, state) in enumerate(zip(self._env_numbers, self.cur_states)):
-                vector_state = np.zeros((NUM_EMAILS * len(SIZES)))
-                if self.cur_states[i] - EMAIL_1 >= 0:
-                    email_index = self.cur_states[i] - EMAIL_1
-                    emails = json.loads(self.df.iloc[self._env_numbers[i], 1])
-                    email_size = SIZES.index(emails[email_index]["font_size"])
-                    vector_state[email_index * len(SIZES) + email_size] = 1
-                states.append({
-                    "screenshot": vector_state,
-                    "question": self._questions[i],
-                    "dom": "None"
-                })
-            reward = [0] * NUM_INSTANCES
-            info = [None] * NUM_INSTANCES
-            done = [False] * NUM_INSTANCES
-            self._steps += 1
-            done = done if self._steps < type(self).MAX_STEPS else [True]*NUM_INSTANCES
+        if not self.exploitation:
+                self.cur_states = [self._get_next_state(cur_state, a) for cur_state, a in zip(self.cur_states, action)]
+        states = [{
+            "screenshot": self._get_vector_state(i),
+            "question": "None",
+            "dom": "None"
+        } for i in range(NUM_INSTANCES)]
+        reward = [0] * NUM_INSTANCES
+        info = [None] * NUM_INSTANCES
+        done = [False] * NUM_INSTANCES
+        self._steps += 1
+        done = done if self._steps < type(self).MAX_STEPS else [True]*NUM_INSTANCES
         return states, reward, done, info
 
     def _reset(self):
         # old hack but messes up evaluation of correct answer
         self._steps = 0
-        self.cur_states = [0 for _ in range(NUM_INSTANCES)]
+        self.cur_states = [INBOX_UP for _ in range(NUM_INSTANCES)]
         obs = [{
-            "screenshot": np.zeros((NUM_EMAILS * len(SIZES))),
+            "screenshot": self._get_vector_state(i),
             "question": self._questions[i],
             "dom": "None"
-        } for i, (idx, state) in enumerate(zip(self._env_numbers, self.cur_states))]
+        } for i in range(NUM_INSTANCES)]
         return obs
+
+
+    def _get_vector_state(self, idx: int):
+        """
+        We are representing the state as a vector with the following dimensions:
+        [
+            0-1 # If in inbox or email view
+            0-3 # If in inbox view, which scroll position are we in
+            0-7 # If in email view, which email is selected
+            0-3 # If in email view, which size are we seeing
+            0-6 # Which email are we asking about
+            0-2 # Which size are we asking about
+        ]
+        """
+        vector_state = np.zeros((6))
+        
+        # Set if in inbox or email view
+        if self.cur_states[idx] >= EMAIL_1:
+            vector_state[0] = 1
+
+        # Set if in inbox view, which scroll position are we in
+        if self.cur_states[idx] < EMAIL_1:
+            vector_state[1] = self.cur_states[idx] + 1
+
+        # Set if in email view, which email is selected
+        if self.cur_states[idx] >= EMAIL_1:
+            vector_state[2] = self.cur_states[idx] - EMAIL_1 + 1
+
+        # Set info on current size
+        if self.cur_states[idx] >= EMAIL_1:
+            email_index = self.cur_states[idx] - EMAIL_1
+            emails = json.loads(self.df.iloc[self._env_numbers[idx], 1])
+            email_size = SIZES.index(emails[email_index]["font_size"])
+            vector_state[3] = email_size + 1
+
+        # Set which email we are asking about
+        vector_state[4] = self._email_indices[idx]
+
+        # Set which size we are asking about
+        vector_state[5] = self._email_sizes[idx]
+
+        return vector_state
+

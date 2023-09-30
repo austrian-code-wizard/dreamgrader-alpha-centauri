@@ -62,7 +62,7 @@ class Experience:
         """
         def agent_state_cuda(agent_state):
             return (None if agent_state is None else tuple( # figure out if we need to move this
-                [t.cuda(non_blocking=True) if isinstance(t, torch.Tensor) else t for t in agent_state]))
+                [t.cuda(non_blocking=True) if isinstance(t, torch.Tensor) and torch.cuda.is_available() else t for t in agent_state]))
 
         experience = self._cuda
         if experience is None:

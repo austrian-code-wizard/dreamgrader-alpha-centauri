@@ -9,6 +9,7 @@ import collections
 import pandas as pd
 import torch
 from torchvision.io import read_image
+from torchvision.transforms import ToPILImage
 import gymnasium as gym
 import numpy as np
 from PIL import Image
@@ -257,8 +258,10 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     USE_BACK_ACTION = None
     ENV_ID_SCHEDULE = None
     NUM_DEMOS = None
+    USE_SCREENSHOT_CACHE = None
 
     ITER = None
+    SCREENSHOT_CACHE = {}
     NUM_ACTIONS_WITH_BACK = 6
     NUM_ACTIONS_NO_BACK = 5
     DEFAULT_DATA_DIR = "/scr-ssd/moritzst/data_envs_scroll"
@@ -302,6 +305,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.USE_BACK_ACTION = config.get("use_back_action", False)
         cls.ENV_ID_SCHEDULE = config.get("env_id_schedule", None)
         cls.NUM_DEMOS = config.get("num_demos", 0)
+        cls.USE_SCREENSHOT_CACHE = config.get("use_screenshot_cache", False)
 
 
     @classmethod
@@ -310,8 +314,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
 
 
     def is_demo(self):
-        return True
-        #return True if self.ITER is not None and self.ITER < self.NUM_DEMOS else False
+        return True if self.ITER is not None and self.ITER < self.NUM_DEMOS else False
 
 
     def get_demo(self):
@@ -363,7 +366,20 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
 
 
     def _get_screenshot(self, env_number, cur_state):
-        img = read_image(f"{self.DATA_DIR}/inboxes/{env_number}/{cur_state}.png").permute(1, 2, 0)
+        if (env_number, cur_state) in type(self).SCREENSHOT_CACHE:
+            img = type(self).SCREENSHOT_CACHE[(env_number, cur_state)]
+        else:
+            path = f"{self.DATA_DIR}/inboxes/{env_number}/{cur_state}.png"
+            if not os.path.exists(path):
+                suffix = '' if cur_state = 0 elsse f"-{cur_state - 1}"
+                path = f"{self.DATA_DIR}/inboxes/{env_number}{suffix}.png"
+            if not os.path.exists(path):
+                raise Exception(f"Screenshot {path} does not exist")
+            img = read_image(f"{self.DATA_DIR}/inboxes/{env_number}/{cur_state}.png").permute(1, 2, 0)
+        
+        if type(self).USE_SCREENSHOT_CACHE and (env_number, cur_state) not in type(self).SCREENSHOT_CACHE:
+            type(self).SCREENSHOT_CACHE[(env_number, cur_state)] = img
+
         if torch.cuda.is_available():
             img = img.cuda()
         return img
@@ -423,7 +439,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     def render(self, mode=None):
         imgs = []
         for i in range(NUM_INSTANCES):
-            img = Image.open(f"{self.DATA_DIR}/inboxes/{self._env_numbers[i]}/{self.cur_states[i]}.png")
+            img = ToPILImage()(self._get_screenshot(self._env_numbers[i], self.cur_states[i]).permute(2, 0, 1))
             img = render.Render(img)
             img.write_text("Underlying env ID: {}".format(self._env_id[i]))
             question = self._questions[i]

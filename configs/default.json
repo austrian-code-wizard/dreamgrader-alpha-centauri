@@ -7,7 +7,7 @@
       "epsilon_schedule": {
         "begin": 1.0,
         "end": 0.05,
-        "total_steps": 37500
+        "total_steps": 10000
       },
       "embedder": {
         "type": "instruction",
@@ -52,7 +52,7 @@
       "epsilon_schedule": {
         "begin": 1.0,
         "end": 0.05,
-        "total_steps": 37500
+        "total_steps": 10000
       },
       "embedder": {
         "type": "recurrent",

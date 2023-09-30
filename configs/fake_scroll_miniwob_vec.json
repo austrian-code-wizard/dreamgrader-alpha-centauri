@@ -3,10 +3,11 @@
     "type": "fake-email-inbox-scroll-vectorized",
     "use_symbol_queries": false,
     "max_steps": 4,
-    "num_train": 90000,
-    "num_test": 10000,
+    "num_train": 210,
+    "num_test": 42,
     "use_back_action": false,
-    "data_dir": "/scr-ssd/moritzst/data_envs_scroll"
+    "data_dir": "/scr-ssd/moritzst/data_envs_scroll",
+    "use_screenshot_cache": true
   },
   "instruction_agent": {
     "type": "learned",

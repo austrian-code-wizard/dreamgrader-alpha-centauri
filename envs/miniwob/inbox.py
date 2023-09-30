@@ -197,6 +197,8 @@ class EmailInboxObservation:
         })
 
     def cuda(self, **kwargs):
+        if not torch.cuda.is_available():
+            return self
         return EmailInboxObservation({
             "screenshot": self._observation["screenshot"].cuda(**kwargs),
             "question": self._observation["question"],
