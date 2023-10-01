@@ -258,10 +258,11 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     USE_BACK_ACTION = None
     ENV_ID_SCHEDULE = None
     NUM_DEMOS = None
-    USE_SCREENSHOT_CACHE = None
+    USE_CACHE = None
 
     ITER = None
     SCREENSHOT_CACHE = {}
+    DOM_CACHE = {}
     NUM_ACTIONS_WITH_BACK = 6
     NUM_ACTIONS_NO_BACK = 5
     DEFAULT_DATA_DIR = "/scr-ssd/moritzst/data_envs_scroll"
@@ -307,7 +308,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.USE_BACK_ACTION = config.get("use_back_action", False)
         cls.ENV_ID_SCHEDULE = config.get("env_id_schedule", None)
         cls.NUM_DEMOS = config.get("num_demos", 0)
-        cls.USE_SCREENSHOT_CACHE = config.get("use_screenshot_cache", False)
+        cls.USE_CACHE = config.get("use_cache", False)
 
 
     @classmethod
@@ -379,15 +380,64 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
                 raise Exception(f"Screenshot {path} does not exist")
             img = read_image(path).permute(1, 2, 0)
         
-        if type(self).USE_SCREENSHOT_CACHE and (env_number, cur_state) not in type(self).SCREENSHOT_CACHE:
+        if type(self).USE_CACHE and (env_number, cur_state) not in type(self).SCREENSHOT_CACHE:
             type(self).SCREENSHOT_CACHE[(env_number, cur_state)] = img
 
         if torch.cuda.is_available():
             img = img.cuda()
         return img
+    
+
+    def _get_dom(self, env_number, email_number, cur_state):
+        if (env_number, cur_state) in type(self).DOM_CACHE:
+            dom = type(self).DOM_CACHE[(env_number, cur_state)]
+        else:
+            path = f"{self.DATA_DIR}/doms/{env_number}/{cur_state}.txt"
+            if not os.path.exists(path):
+                suffix = '' if cur_state == 0 else f"-{cur_state - 1}"
+                path = f"{self.DATA_DIR}/doms/{env_number}{suffix}.txt"
+            if not os.path.exists(path):
+                raise Exception(f"DOM {path} does not exist")
+            with open(path, "r") as f:
+                dom = f.read()
+
+            if cur_state > INBOX_DOWN:
+                dom = dom.replace("<div class=email-body>", f"<div class=email-body size={self._email_sizes[email_number]}>")
+        
+        if type(self).USE_CACHE and (env_number, cur_state) not in type(self).DOM_CACHE:
+            type(self).DOM_CACHE[(env_number, cur_state)] = dom
+
+        return dom
+    
+
+    def _get_state(self, idx: int):
+        """
+        We are representing the state as a vector with the following dimensions:
+        [
+            0-1 # If in inbox or email view
+            0-3 # If in inbox view, which scroll position are we in
+            0-7 # If in email view, which email is selected
+            0-3 # If in email view, which size are we seeing
+            0-6 # Which email are we asking about
+            0-2 # Which size are we asking about
+        ]
+        """
+        vector_state = np.zeros((2))
+
+        # Set which email we are asking about
+        vector_state[0] = self._email_indices[idx]
+
+        # Set which size we are asking about
+        vector_state[1] = self._email_sizes[idx]
+
+        return {
+            "screenshot": vector_state,
+            "question": self._questions[idx],
+            "dom": self._get_dom(self._env_numbers[idx], self._email_indices[idx], self.cur_states[idx])
+        }
 
 
-    def _generate_question_and_label(self, env_id, env_number, email_number, email_size):
+    def _generate_question_and_label(self, env_number, email_number, email_size):
         emails = json.loads(self.DF.iloc[env_number, 1])
         font_size = SIZES[email_size]
         
@@ -404,38 +454,21 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     
 
     def _step(self, action):
-        if self.exploitation:
-            state = [{
-                "screenshot": np.zeros((TASK_HEIGHT, TASK_WIDTH, 1)),
-                "question": "None",
-                "dom": "None"
-            } for _ in range(NUM_INSTANCES)]
-            reward = [0] * NUM_INSTANCES
-            info = [None] * NUM_INSTANCES
-            done = [True] * NUM_INSTANCES
-        else:
-            self.cur_states = [self._get_next_state(cur_state, a) for cur_state, a in zip(self.cur_states, action)]
-            state = [{
-                "screenshot": self._get_screenshot(idx, state),
-                "question": self._questions[i],
-                "dom": "None"
-            } for i, (idx, state) in enumerate(zip(self._env_numbers, self.cur_states))]
-            reward = [0] * NUM_INSTANCES
-            info = [None] * NUM_INSTANCES
-            done = [False] * NUM_INSTANCES
-            self._steps += 1
-            done = done if self._steps < type(self).MAX_STEPS else [True]*NUM_INSTANCES
-        return state, reward, done, info
+        if not self.exploitation:
+                self.cur_states = [self._get_next_state(cur_state, a) for cur_state, a in zip(self.cur_states, action)]
+        states = [self._get_state(i) for i in range(NUM_INSTANCES)]
+        reward = [0] * NUM_INSTANCES
+        info = [None] * NUM_INSTANCES
+        done = [False] * NUM_INSTANCES
+        self._steps += 1
+        done = done if self._steps < type(self).MAX_STEPS else [True]*NUM_INSTANCES
+        return states, reward, done, info
 
     def _reset(self):
         # old hack but messes up evaluation of correct answer
         self._steps = 0
-        self.cur_states = [0 for _ in range(NUM_INSTANCES)]
-        obs = [{
-            "screenshot": self._get_screenshot(idx, state),
-            "question": self._questions[i],
-            "dom": "None"
-        } for i, (idx, state) in enumerate(zip(self._env_numbers, self.cur_states))]
+        self.cur_states = [INBOX_UP for _ in range(NUM_INSTANCES)]
+        obs = [self._get_state(i) for i in range(NUM_INSTANCES)]
         return obs
 
     def render(self, mode=None):
@@ -467,7 +500,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         self._env_numbers = [idx // (NUM_EMAILS * len(SIZES)) for idx in id]
         self._email_indices = [(idx % (NUM_EMAILS * len(SIZES))) // len(SIZES) for idx in id]
         self._email_sizes = [(idx % (NUM_EMAILS * len(SIZES))) % len(SIZES) for idx in id]
-        question_labels = [self._generate_question_and_label(id, env_number, email_number, email_size) for id, env_number, email_number, email_size in zip(self._env_id, self._env_numbers, self._email_indices, self._email_sizes)]
+        question_labels = [self._generate_question_and_label(env_number, email_number, email_size) for env_number, email_number, email_size in zip(self._env_numbers, self._email_indices, self._email_sizes)]
         self._questions = [q for (q, _, _) in question_labels]
         self._labels = [l for (_, l, _) in question_labels]
         self._email_indices = [i for (_, _, i) in question_labels]
