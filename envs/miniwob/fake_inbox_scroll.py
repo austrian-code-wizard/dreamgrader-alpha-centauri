@@ -403,7 +403,9 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
                 dom = f.read()
 
             if cur_state > INBOX_DOWN:
-                dom = dom.replace("<div class=email-body>", f"<div class=email-body size={self._email_sizes[email_number]}>")
+                emails = json.loads(self.DF.iloc[self._env_numbers[i], 1])
+                size = emails[email_number]["font_size"]
+                dom = dom.replace("<div class=email-body>", f"<div class=email-body size={size}>")
         
         if type(self).USE_CACHE and (env_number, cur_state) not in type(self).DOM_CACHE:
             type(self).DOM_CACHE[(env_number, cur_state)] = dom
