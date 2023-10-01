@@ -3,6 +3,7 @@ import math
 import collections
 import numpy as np
 import torch
+import re
 from torch import nn, Tensor
 from torch import distributions as td
 from torch.nn import functional as F
@@ -930,22 +931,19 @@ class Residual(nn.Module):  #@save
         return F.relu(Y)
 
 
+
 class MiniWobLanguageEmbedder(Embedder):
     d_vocab = 128
     
     def __init__(self, observation_space, embed_dim=256):
         super().__init__(embed_dim)
 
-        self.tokenizer = get_tokenizer('basic_english')
-        phrases = QUESTIONS + [" ".join(LOREM_WORDS), " ".join(PEOPLE_NAMES), "."]
-        self.vocab = build_vocab_from_iterator(map(self.tokenizer, phrases), specials=["<unk>", "<pad>", "<bos>"])
-        for t in HTML_TOKENS:
-            if t not in self.vocab:
-                self.vocab.append_token(t)
-               
+        self.tokenizer = lambda x: re.sub(r'>[^<]+<', '> <', x).replace("<", "").replace(">", "").split()
+        self.vocab = build_vocab_from_iterator(HTML_TOKENS, specials=["<unk>", "<pad>", "<bos>"])               
         self.vocab.set_default_index(self.vocab["<unk>"])
-        self.embed = nn.Embedding(len(self.vocab), self.d_vocab).cuda()
-        print(self.vocab["<unk>"])
+        self.embed = nn.Embedding(len(self.vocab), self.d_vocab)
+        if torch.cuda.is_available():
+            self.embed = self.embed.cuda()
         
 
     def forward(self, obs):
@@ -1136,37 +1134,8 @@ class MiniWobVectorizedEmbedderV2(Embedder):
                 print(f"Vals: {tensor[:, i]}")
                 print(f"embedder dim {self._embedders[i].num_embeddings}")
                 raise e
-        return self._final_fc_layer(F.relu(self._fc_layer(torch.cat(embeds, -1))))
-
-
-class MiniWobVectorizedEmbedder(Embedder):
-    def __init__(self, observation_space, embed_dim, use_dom=False):
-        super().__init__(embed_dim)
-
-        hidden_size = 128
-        self.state_embedder = nn.Sequential(
-                nn.Linear(observation_space.feature_space["screenshot"].shape[0], hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, embed_dim),
-        )
-
-    def forward(self, obs):
-
-        if isinstance(obs, list):
-            question = [o.question for o in obs]
-            dom = [o.dom for o in obs]
-            screenshot = torch.stack([o.screenshot for o in obs])
-        else:
-            question = [obs.question]
-            dom = [obs.dom]
-            screenshot = obs.screenshot.unsqueeze(0)
-        
-        # Check batch size
-        assert len(question) == screenshot.shape[0], "Batch size mismatch"
-        B = len(question)
-
-        tensor_screenshot = screenshot.float().to(device)
-        return self.state_embedder(tensor_screenshot)
+        res = self._final_fc_layer(F.relu(self._fc_layer(torch.cat(embeds, -1))))
+        return res
 
 
 class MiniWobEmbedder(Embedder):
@@ -1179,22 +1148,17 @@ class MiniWobEmbedder(Embedder):
     def __init__(self, observation_space, embed_dim=256, use_dom=False):
         super().__init__(embed_dim)
 
-        # self.language_embedder = MiniWobLanguageEmbedder(None, embed_dim=embed_dim)
+        self.language_embedder = MiniWobLanguageEmbedder(None, embed_dim=embed_dim)
         # self.question_embedder = MiniWobLanguageTransformer(None, embed_dim=embed_dim)
         # self.dom_embedder = MiniWobLanguageTransformer(None, embed_dim=embed_dim)
-        self.instruction_embedder = nn.Sequential(
-            nn.Linear(13, 64),
-            nn.ReLU(),
-            nn.Linear(64, 128),
-            nn.ReLU(),
-            nn.Linear(128, embed_dim)
-        )
-        self.screenshot_embedder = MiniWobScreenshotEmbedder(None, embed_dim=embed_dim)
-        self.extra_embedding1 = nn.Parameter(torch.randn((1, embed_dim)))
-        self.extra_embedding2 = nn.Parameter(torch.randn((1, embed_dim)))
-        encoder_layers = nn.TransformerEncoderLayer(embed_dim, self.nhead, embed_dim, self.dropout)
+        self.question_embedder = MiniWobVectorizedEmbedderV2(observation_space, MiniWobLanguageEmbedder.d_vocab, use_dom)
+        
+        # self.screenshot_embedder = MiniWobScreenshotEmbedder(None, embed_dim=embed_dim)
+        # self.extra_embedding1 = nn.Parameter(torch.randn((1, embed_dim)))
+        # self.extra_embedding2 = nn.Parameter(torch.randn((1, embed_dim)))
+        encoder_layers = nn.TransformerEncoderLayer(MiniWobLanguageEmbedder.d_vocab, self.nhead, MiniWobLanguageEmbedder.d_vocab, self.dropout)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
-        self.linear = nn.Linear((3 if use_dom else 2) * embed_dim, embed_dim)
+        self.linear = nn.Linear(MiniWobLanguageEmbedder.d_vocab, embed_dim)
         self.use_dom = use_dom
 
         # self.load_state_dict(torch.load("font_size_embedder.pth"))
@@ -1213,39 +1177,33 @@ class MiniWobEmbedder(Embedder):
         assert len(question) == screenshot.shape[0], "Batch size mismatch"
         B = len(question)
 
-        """question_embedding, question_pad_mask = self.language_embedder(question)
-        question_embedding = self.question_embedder(question_embedding, pad_mask=question_pad_mask).unsqueeze(1)
-        dom_embedding = None
-        if self.use_dom:
-            dom_token_embedding, dom_pad_mask = self.language_embedder(dom)
-            dom_embedding = self.dom_embedder(dom_token_embedding, query=question_embedding, pad_mask=dom_pad_mask).unsqueeze(1)"""
+        question_embedding = self.question_embedder(obs).unsqueeze(0)
+        # print(f"Q embedding size {question_embedding.shape}")
+        dom_embedding, pad_mask = self.language_embedder(dom)
+        # print(f"DOM embedding size {dom_embedding.shape}")
 
-        # Process vectorize question
-        tensor_questions = []
-        for q in question:
-            format_number = lambda num: '1st' if num == 0 else '2nd' if num == 1 else '3rd' if num == 2 else f'{num+1}th'
-            tensor_inputs = [1 if format_number(i) in q else 0 for i in range(10)] + [1 if i in q else 0 for i in ['small', 'medium', 'large']]
-            tensor_questions.append(tensor_inputs)
-
-        tensor_questions = torch.FloatTensor(tensor_questions).to(device)
-        question_embedding = self.instruction_embedder(tensor_questions).unsqueeze(1)
-        screenshot_embedding = self.screenshot_embedder(screenshot)
-        extra_emb1 = torch.repeat_interleave(self.extra_embedding1, B, dim=0).unsqueeze(1)
-        extra_emb2 = torch.repeat_interleave(self.extra_embedding2, B, dim=0).unsqueeze(1)
+        # extra_emb1 = torch.repeat_interleave(self.extra_embedding1, B, dim=0).unsqueeze(1)
+        # extra_emb2 = torch.repeat_interleave(self.extra_embedding2, B, dim=0).unsqueeze(1)
+        # multi_embedding = torch.cat([
+        #     question_embedding,
+        #     screenshot_embedding,
+        # ] + ([dom_embedding] if self.use_dom else [])
+        # + [extra_emb1, extra_emb2], dim=1)
         multi_embedding = torch.cat([
             question_embedding,
-            screenshot_embedding,
-        ] + ([dom_embedding] if self.use_dom else [])
-        + [extra_emb1, extra_emb2], dim=1)
-        multi_embedding = multi_embedding.permute(1, 0, 2)
-        multi_embedding = self.transformer_encoder(multi_embedding)
-        multi_embedding = multi_embedding.permute(1, 0, 2)
-        res = torch.concat(([dom_embedding.squeeze(1)] if self.use_dom else []) + [
-            multi_embedding[:,-2,:],
-            multi_embedding[:,-1,:],
-        ], dim=1).reshape(B, -1)
-        res = self.linear(res)
-        return res
+            dom_embedding,
+        ], dim=0)
+        # print(f"Multi embedding size {multi_embedding.shape}")
+
+        pad_mask = torch.cat([pad_mask, torch.zeros((B, 1), dtype=torch.bool).to(device)], dim=1)
+        # print(f"Pad mask: {pad_mask.shape}")
+        multi_embedding = self.transformer_encoder(multi_embedding, src_key_padding_mask=pad_mask)
+        # res = torch.concat(([dom_embedding.squeeze(1)] if self.use_dom else []) + [
+        #     multi_embedding[:,-2,:],
+        #     multi_embedding[:,-1,:],
+        # ], dim=1).reshape(B, -1)
+        # res = self.linear(multi_embedding[:,0,:])
+        return self.linear(multi_embedding[0,:,:])
 
 
 class SimpleGridStateEmbedder(Embedder):

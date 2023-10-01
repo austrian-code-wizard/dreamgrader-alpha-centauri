@@ -50,36 +50,9 @@ class FakeInboxScrollVectorizedMetaEnv(FakeInboxScrollMetaEnv):
                 np.array([type(self).NUM_TRAIN + type(self).NUM_TEST + 1]),
                 dtype=np.int)
         })
-    
-
-    def _step(self, action):
-        if not self.exploitation:
-                self.cur_states = [self._get_next_state(cur_state, a) for cur_state, a in zip(self.cur_states, action)]
-        states = [{
-            "screenshot": self._get_vector_state(i),
-            "question": "None",
-            "dom": "None"
-        } for i in range(NUM_INSTANCES)]
-        reward = [0] * NUM_INSTANCES
-        info = [None] * NUM_INSTANCES
-        done = [False] * NUM_INSTANCES
-        self._steps += 1
-        done = done if self._steps < type(self).MAX_STEPS else [True]*NUM_INSTANCES
-        return states, reward, done, info
-
-    def _reset(self):
-        # old hack but messes up evaluation of correct answer
-        self._steps = 0
-        self.cur_states = [INBOX_UP for _ in range(NUM_INSTANCES)]
-        obs = [{
-            "screenshot": self._get_vector_state(i),
-            "question": self._questions[i],
-            "dom": "None"
-        } for i in range(NUM_INSTANCES)]
-        return obs
 
 
-    def _get_vector_state(self, idx: int):
+    def _get_state(self, idx: int):
         """
         We are representing the state as a vector with the following dimensions:
         [
@@ -118,5 +91,9 @@ class FakeInboxScrollVectorizedMetaEnv(FakeInboxScrollMetaEnv):
         # Set which size we are asking about
         vector_state[5] = self._email_sizes[idx]
 
-        return vector_state
+        return {
+            "screenshot": vector_state,
+            "question": self._questions[idx],
+            "dom": "None"
+        }
 

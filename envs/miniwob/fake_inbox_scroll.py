@@ -279,8 +279,9 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         self.observation_space = gym.spaces.Dict({
             "observation": gym.spaces.Sequence(
                 gym.spaces.Dict({
-                    'screenshot': gym.spaces.Box(low=0, high=255, shape=(TASK_HEIGHT, TASK_WIDTH, 1), dtype=np.uint8),
-                    'question': gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET)
+                    'screenshot': gym.spaces.Box(low=np.array([0] * 2), high=np.array([6, 2]), dtype=np.int),
+                    'question': gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET),
+                    'dom': gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET)
                 })
             ),
             "env_id": gym.spaces.Box(np.array([0]),
