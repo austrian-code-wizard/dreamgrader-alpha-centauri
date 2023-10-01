@@ -389,7 +389,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         return img
     
 
-    def _get_dom(self, env_number, email_number, cur_state):
+    def _get_dom(self, env_number, cur_state):
         if (env_number, cur_state) in type(self).DOM_CACHE:
             dom = type(self).DOM_CACHE[(env_number, cur_state)]
         else:
@@ -404,7 +404,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
 
             if cur_state > INBOX_DOWN:
                 emails = json.loads(self.DF.iloc[env_number, 1])
-                size = emails[email_number]["font_size"]
+                size = emails[cur_state - EMAIL_1]["font_size"]
                 dom = dom.replace("<div class=email-body>", f"<div class=email-body size={size}>")
         
         if type(self).USE_CACHE and (env_number, cur_state) not in type(self).DOM_CACHE:
@@ -436,7 +436,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         return {
             "screenshot": vector_state,
             "question": self._questions[idx],
-            "dom": self._get_dom(self._env_numbers[idx], self._email_indices[idx], self.cur_states[idx])
+            "dom": self._get_dom(self._env_numbers[idx], self.cur_states[idx])
         }
 
 
