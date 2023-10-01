@@ -939,7 +939,7 @@ class MiniWobLanguageEmbedder(Embedder):
         super().__init__(embed_dim)
 
         self.tokenizer = lambda x: re.sub(r'>[^<]+<', '> <', x).replace("<", "").replace(">", "").split()
-        self.vocab = build_vocab_from_iterator(HTML_TOKENS, specials=["<unk>", "<pad>", "<bos>"])               
+        self.vocab = build_vocab_from_iterator([HTML_TOKENS], specials=["<unk>", "<pad>", "<bos>"])               
         self.vocab.set_default_index(self.vocab["<unk>"])
         self.embed = nn.Embedding(len(self.vocab), self.d_vocab)
         if torch.cuda.is_available():
