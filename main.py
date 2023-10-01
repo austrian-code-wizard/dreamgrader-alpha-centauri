@@ -499,17 +499,25 @@ def main():
                     "reward/train_no_eps", np.mean(train_no_eps_rewards), step,
                     exploration_steps + instruction_steps)
 
+        import time
+        start = time.time()
         exploration_env = create_env(step // NUM_INSTANCES, iter=step)
+        # Env creation {time.time()  -  start}")
+        start = time.time()
         exploration_episode, _ = run_episode(
                 # Exploration episode gets ignored
                 env_class.instruction_wrapper()(
                         exploration_env, [], seed=max(0, step - 1)),
                 exploration_agent)
+        # print(f"Expl ep {time.time() - start}")
+        start = time.time()
         # Interleave this
         for exp in relabel.TrajectoryExperience.episode_to_device(
                     exploration_episode,
                     exploration_agent.buffer_on_cpu):
             exploration_agent.update(exp)
+        # print(f"expl update {time.time() - start}")
+        start = time.time()
 
         exploration_steps += len(exploration_episode)
         exploration_lengths.append(len(exploration_episode))
@@ -518,6 +526,8 @@ def main():
         instruction_env = env_class.instruction_wrapper()(
                 exploration_env, exploration_episode, seed=step + 1,
                 exploitation=True)
+        # print(f"Creating instruction env {time.time() - start}")
+        start = time.time()
 
 
         # TODO: check expl & instruction env IDs match here
@@ -530,6 +540,7 @@ def main():
                 exploitation=True)
         instruction_steps += len(episode)
         trajectory_embedder.use_ids(True)
+        # print(f"Instr ep {time.time() - start}")
 
         rewards.append(sum(exp.reward for exp in episode))
         bug_is_present.append(exploration_env.env_id)

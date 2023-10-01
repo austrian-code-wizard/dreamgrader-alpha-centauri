@@ -37,10 +37,10 @@ python3 --version
 
 # Print command
 echo "Running the following command:"
-echo "python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob.json -s {seed}"
+echo "python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob_vec.json -s {seed}"
 
 # Run command
-python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob.json -s {seed}
+python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob_vec.json -s {seed}
 
 # Done
 echo "Done"
@@ -63,6 +63,6 @@ with open(TMP, "w") as f:
         exp_name=f"{args.name}",
         seed=args.seed))
 
-cmd = "sbatch --account=iris -p {partition} --time 300:00:00 --job-name=dream-miniwob-{exp_name} --nodelist=iris1,iris2,iris3 --output=sbatch/{exp_name}.txt {tmp}".format(partition=partition, exp_name=args.name, tmp=TMP)
+cmd = "sbatch --account=iris -p {partition} --time 300:00:00 --job-name=dream-miniwob-{exp_name} --nodelist=iris1 --output=sbatch/{exp_name}.txt {tmp}".format(partition=partition, exp_name=args.name, tmp=TMP)
 subprocess.run(cmd, check=True, shell=True)
 time.sleep(2)

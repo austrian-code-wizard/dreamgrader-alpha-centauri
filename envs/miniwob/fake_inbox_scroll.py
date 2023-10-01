@@ -265,6 +265,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     NUM_ACTIONS_WITH_BACK = 6
     NUM_ACTIONS_NO_BACK = 5
     DEFAULT_DATA_DIR = "/scr-ssd/moritzst/data_envs_scroll"
+    DF = None
 
     def __init__(self, env_id, _):
         super().__init__(env_id, EmailInboxObservation)
@@ -287,7 +288,8 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         })
         self.action_space = gym.spaces.Discrete(type(self).NUM_ACTIONS_WITH_BACK if type(self).USE_BACK_ACTION else type(self).NUM_ACTIONS_NO_BACK)
         self.exploitation = False
-        self.df = pd.read_csv(os.path.abspath(f"{self.DATA_DIR}/inbox_samples.csv"))
+        if type(self).DF is None:
+            type(self).DF = pd.read_csv(os.path.abspath(f"{self.DATA_DIR}/inbox_samples.csv"))
         
         self.set_underlying_env_id(env_id)
 
@@ -371,11 +373,11 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         else:
             path = f"{self.DATA_DIR}/inboxes/{env_number}/{cur_state}.png"
             if not os.path.exists(path):
-                suffix = '' if cur_state = 0 elsse f"-{cur_state - 1}"
+                suffix = '' if cur_state == 0 else f"-{cur_state - 1}"
                 path = f"{self.DATA_DIR}/inboxes/{env_number}{suffix}.png"
             if not os.path.exists(path):
                 raise Exception(f"Screenshot {path} does not exist")
-            img = read_image(f"{self.DATA_DIR}/inboxes/{env_number}/{cur_state}.png").permute(1, 2, 0)
+            img = read_image(path).permute(1, 2, 0)
         
         if type(self).USE_SCREENSHOT_CACHE and (env_number, cur_state) not in type(self).SCREENSHOT_CACHE:
             type(self).SCREENSHOT_CACHE[(env_number, cur_state)] = img
@@ -386,7 +388,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
 
 
     def _generate_question_and_label(self, env_id, env_number, email_number, email_size):
-        emails = json.loads(self.df.iloc[env_number, 1])
+        emails = json.loads(self.DF.iloc[env_number, 1])
         font_size = SIZES[email_size]
         
         # Only activate if using symbol queries
@@ -444,7 +446,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
             img.write_text("Underlying env ID: {}".format(self._env_id[i]))
             question = self._questions[i]
             if type(self).USE_SYMBOL_QUERIES:
-                emails = json.loads(self.df.iloc[self._env_numbers[i], 1])
+                emails = json.loads(self.DF.iloc[self._env_numbers[i], 1])
                 symbol = emails[self._email_indices[i]]["symbol"]
                 question = question.split()
                 question.pop(2)

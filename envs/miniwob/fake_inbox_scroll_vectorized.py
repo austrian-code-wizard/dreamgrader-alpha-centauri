@@ -108,7 +108,7 @@ class FakeInboxScrollVectorizedMetaEnv(FakeInboxScrollMetaEnv):
         # Set info on current size
         if self.cur_states[idx] >= EMAIL_1:
             email_index = self.cur_states[idx] - EMAIL_1
-            emails = json.loads(self.df.iloc[self._env_numbers[idx], 1])
+            emails = json.loads(self.DF.iloc[self._env_numbers[idx], 1])
             email_size = SIZES.index(emails[email_index]["font_size"])
             vector_state[3] = email_size + 1
 
