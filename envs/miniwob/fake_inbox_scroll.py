@@ -259,6 +259,8 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     ENV_ID_SCHEDULE = None
     NUM_DEMOS = None
     USE_CACHE = None
+    USE_SCREENSHOTS = None
+    USE_DOMS = None
 
     ITER = None
     SCREENSHOT_CACHE = {}
@@ -275,14 +277,16 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         self._env_numbers = None
         self._email_indices = None
         self._email_sizes = None
+
+        obs_space = {'question': gym.spaces.Box(low=np.array([0] * 2), high=np.array([6, 2]), dtype=np.int)}
+        if type(self).USE_SCREENSHOTS:
+            obs_space['screenshot'] = gym.spaces.Box(low=0, high=255, shape=(TASK_HEIGHT, TASK_WIDTH, 1), dtype=np.uint8)
+        if type(self).USE_DOMS:
+            obs_space['dom'] = gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET)
  
         self.observation_space = gym.spaces.Dict({
             "observation": gym.spaces.Sequence(
-                gym.spaces.Dict({
-                    'screenshot': gym.spaces.Box(low=np.array([0] * 2), high=np.array([6, 2]), dtype=np.int),
-                    'question': gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET),
-                    'dom': gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET)
-                })
+                gym.spaces.Dict(obs_space)
             ),
             "env_id": gym.spaces.Box(np.array([0]),
                 np.array([type(self).NUM_TRAIN + type(self).NUM_TEST + 1]),
@@ -310,6 +314,8 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.ENV_ID_SCHEDULE = config.get("env_id_schedule", None)
         cls.NUM_DEMOS = config.get("num_demos", 0)
         cls.USE_CACHE = config.get("use_cache", False)
+        cls.USE_SCREENSHOTS = config.get("use_screenshots", True)
+        cls.USE_DOMS = config.get("use_doms", True)
 
 
     @classmethod
@@ -434,9 +440,9 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         vector_state[1] = self._email_sizes[idx]
 
         return {
-            "screenshot": vector_state,
-            "question": self._questions[idx],
-            "dom": self._get_dom(self._env_numbers[idx], self.cur_states[idx])
+            "screenshot": self._get_screenshot(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_SCREENSHOTS else None,
+            "question": vector_state,
+            "dom": self._get_dom(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_DOMS else None
         }
 
 

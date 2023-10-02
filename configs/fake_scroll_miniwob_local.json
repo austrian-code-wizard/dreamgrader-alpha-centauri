@@ -8,13 +8,14 @@
     "use_back_action": false,
     "data_dir": "./data_envs_scroll",
     "use_screenshot_cache": true,
-    "num_demos": 4000
+    "num_demos": 4000,
+    "use_doms": true,
+    "use_screenshots": true
   },
   "instruction_agent": {
     "type": "learned",
     "policy": {
       "embedder": {
-        "use_dom": false,
         "trajectory_embedder": {
           "penalty": 0
         },
@@ -28,7 +29,6 @@
   "exploration_agent": {
     "policy": {
       "embedder": {
-        "use_dom": false,
         "experience_embedder": {
           "state_embed_dim": 64,
           "action_embed_dim": 16,

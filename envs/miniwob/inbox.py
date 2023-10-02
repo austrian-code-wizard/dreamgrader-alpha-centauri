@@ -161,13 +161,13 @@ class InboxMetaEnv(meta_exploration.MetaExplorationEnv):
 
 class EmailInboxObservation:
     def __init__(self, observation):
-        if not isinstance(observation["screenshot"], torch.Tensor):
+        if not isinstance(observation["screenshot"], torch.Tensor) and observation["screenshot"] is not None:
             observation["screenshot"] = torch.tensor(observation["screenshot"])
         self._observation = observation
 
     @property
     def is_cuda(self):
-        return self._observation["screenshot"].is_cuda
+        return self._observation["screenshot"].is_cuda if self._observation["screenshot"] is not None else False
 
     @property
     def screenshot(self):
@@ -184,14 +184,14 @@ class EmailInboxObservation:
     def cpu(self):
         # Hacky way to accomodate cpu/cuda switching in observation buffer
         return EmailInboxObservation({
-            "screenshot": self._observation["screenshot"].detach().cpu(),
+            "screenshot": self._observation["screenshot"].detach().cpu() if self._observation["screenshot"] is not None else None,
             "question": self._observation["question"],
             "dom": self._observation["dom"]
         })
 
     def pin_memory(self):
         return EmailInboxObservation({
-            "screenshot": self._observation["screenshot"].pin_memory(),
+            "screenshot": self._observation["screenshot"].pin_memory() if self._observation["screenshot"] is not None else None,
             "question": self._observation["question"],
             "dom": self._observation["dom"]
         })
@@ -200,7 +200,7 @@ class EmailInboxObservation:
         if not torch.cuda.is_available():
             return self
         return EmailInboxObservation({
-            "screenshot": self._observation["screenshot"].cuda(**kwargs),
+            "screenshot": self._observation["screenshot"].cuda(**kwargs) if self._observation["screenshot"] is not None else None,
             "question": self._observation["question"],
             "dom": self._observation["dom"]
         })

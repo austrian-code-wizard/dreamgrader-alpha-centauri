@@ -117,8 +117,7 @@ class TransitionEmbedder(Embedder):
     def from_config(cls, config, env):
         state_embedder = get_state_embedder(env)(
                 env.observation_space["observation"],
-                config.get("experience_embedder").get("state_embed_dim"),
-                config.get("use_dom"))
+                config.get("experience_embedder").get("state_embed_dim"))
         action_embedder = FixedVocabEmbedder(
                 env.action_space.n,
                 config.get("experience_embedder").get("action_embedder").get("embed_dim"))
@@ -366,8 +365,7 @@ class InstructionPolicyEmbedder(Embedder):
         """
         obs_embedder = get_state_embedder(env)(
                 env.observation_space["observation"],
-                config.get("obs_embedder").get("embed_dim"),
-                config.get("use_dom"))
+                config.get("obs_embedder").get("embed_dim"))
         # Use SimpleGridEmbeder since these are just discrete vars
         instruction_embedder = SimpleGridStateEmbedder(
                 env.observation_space["instructions"],
@@ -381,8 +379,7 @@ class InstructionPolicyEmbedder(Embedder):
         transition_config = config.get("transition_embedder")
         state_embedder = get_state_embedder(env)(
                 env.observation_space["observation"],
-                transition_config.get("state_embed_dim"),
-                config.get("use_dom"))
+                transition_config.get("state_embed_dim"))
         # This needs to cover embedding of the exploration time env...
         action_embedder = FixedVocabEmbedder(
                 env.unwrapped.action_space.n, transition_config.get("action_embed_dim"))
@@ -484,8 +481,7 @@ class RecurrentAndTaskIDEmbedder(Embedder):
         state_embed_config = config.get("state_embedder")
         state_embedder = get_state_embedder(env)(
             env.observation_space["observation"],
-            state_embed_config.get("embed_dim"),
-            config.get("use_dom"))
+            state_embed_config.get("embed_dim"))
         instruction_embedder = SimpleGridStateEmbedder(
             env.observation_space["instructions"],
             state_embed_config.get("embed_dim"))
@@ -660,8 +656,7 @@ class VariBADEmbedder(Embedder):
         state_embed_config = config.get("state_embedder")
         state_embedder = get_state_embedder(env)(
             env.observation_space["observation"],
-            state_embed_config.get("embed_dim"),
-            config.get("use_dom"))
+            state_embed_config.get("embed_dim"))
         instruction_embedder = SimpleGridStateEmbedder(
             env.observation_space["instructions"],
             state_embed_config.get("embed_dim"))
@@ -745,8 +740,7 @@ class RecurrentStateEmbedder(Embedder):
         experience_embed_config = config.get("experience_embedder")
         state_embedder = get_state_embedder(env)(
                 env.observation_space["observation"],
-                experience_embed_config.get("state_embed_dim"),
-                config.get("use_dom"))
+                experience_embed_config.get("state_embed_dim"))
         action_embedder = FixedVocabEmbedder(
                 env.action_space.n + 1, experience_embed_config.get("action_embed_dim"))
         instruction_embedder = None
@@ -933,15 +927,13 @@ class Residual(nn.Module):  #@save
 
 
 class MiniWobLanguageEmbedder(Embedder):
-    d_vocab = 128
-    
     def __init__(self, observation_space, embed_dim=256):
         super().__init__(embed_dim)
 
         self.tokenizer = lambda x: re.sub(r'>[^<]+<', '> <', x).replace("<", "").replace(">", "").split()
         self.vocab = build_vocab_from_iterator([HTML_TOKENS], specials=["<unk>", "<pad>", "<bos>"])               
         self.vocab.set_default_index(self.vocab["<unk>"])
-        self.embed = nn.Embedding(len(self.vocab), self.d_vocab)
+        self.embed = nn.Embedding(len(self.vocab), self.embed_dim)
         if torch.cuda.is_available():
             self.embed = self.embed.cuda()
         
@@ -1136,6 +1128,39 @@ class MiniWobVectorizedEmbedderV2(Embedder):
                 raise e
         res = self._final_fc_layer(F.relu(self._fc_layer(torch.cat(embeds, -1))))
         return res
+    
+
+class MiniWobQuestionEmbedder(Embedder):
+    """Embedder for SimpleGridEnv states.
+
+    Concretely, embeds (x, y) separately with different embeddings for each cell.
+    """
+
+    def __init__(self, observation_space, embed_dim):
+        """Constructs for SimpleGridEnv.
+
+        Args:
+            observation_space (spaces.Box): limits for the observations to embed.
+        """
+        super().__init__(embed_dim)
+
+        assert all(dim == 0 for dim in observation_space.low)
+        assert observation_space.dtype == np.int
+
+        hidden_size = 32
+        self._embedders = nn.ModuleList(
+                [nn.Embedding(dim + 1, hidden_size) for dim in observation_space.high])
+        self._fc_layer = nn.Linear(hidden_size * len(observation_space.high), 256)
+        self._final_fc_layer = nn.Linear(256, embed_dim)
+
+    def forward(self, obs):
+
+        tensor = obs.int().to(device)
+        embeds = []
+        for i in range(tensor.shape[1]):
+            embeds.append(self._embedders[i](tensor[:, i]))
+        res = self._final_fc_layer(F.relu(self._fc_layer(torch.cat(embeds, -1))))
+        return res
 
 
 class MiniWobEmbedder(Embedder):
@@ -1144,32 +1169,29 @@ class MiniWobEmbedder(Embedder):
     nlayers = 2 #6  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead = 4  # number of heads in nn.MultiheadAttention
     dropout = 0.1  # dropout probability
+    raw_embed_dim = 128
     
-    def __init__(self, observation_space, embed_dim=256, use_dom=False):
+    def __init__(self, observation_space, embed_dim=256):
         super().__init__(embed_dim)
 
-        self.language_embedder = MiniWobLanguageEmbedder(None, embed_dim=embed_dim)
-        # self.question_embedder = MiniWobLanguageTransformer(None, embed_dim=embed_dim)
-        # self.dom_embedder = MiniWobLanguageTransformer(None, embed_dim=embed_dim)
-        self.question_embedder = MiniWobVectorizedEmbedderV2(observation_space, MiniWobLanguageEmbedder.d_vocab, use_dom)
-        
-        # self.screenshot_embedder = MiniWobScreenshotEmbedder(None, embed_dim=embed_dim)
-        # self.extra_embedding1 = nn.Parameter(torch.randn((1, embed_dim)))
-        # self.extra_embedding2 = nn.Parameter(torch.randn((1, embed_dim)))
-        encoder_layers = nn.TransformerEncoderLayer(MiniWobLanguageEmbedder.d_vocab, self.nhead, MiniWobLanguageEmbedder.d_vocab, self.dropout)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
-        self.linear = nn.Linear(MiniWobLanguageEmbedder.d_vocab, embed_dim)
-        self.use_dom = use_dom
+        self.question_embedder = MiniWobQuestionEmbedder(observation_space.feature_space["question"], type(self).raw_embed_dim)
+        if observation_space.feature_space.get("dom") is not None:
+            self.dom_embedder = MiniWobLanguageEmbedder(observation_space.feature_space["dom"], embed_dim=type(self).raw_embed_dim)
 
-        # self.load_state_dict(torch.load("font_size_embedder.pth"))
+        if observation_space.feature_space.get("screenshot") is not None:
+            self.screenshot_embedder = MiniWobScreenshotEmbedder(observation_space.feature_space["screenshot"], embed_dim=type(self).raw_embed_dim)
+
+        encoder_layers = nn.TransformerEncoderLayer(type(self).raw_embed_dim, self.nhead, type(self).raw_embed_dim, self.dropout)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
+        self.linear = nn.Linear(type(self).raw_embed_dim, embed_dim)
 
     def forward(self, obs):
         if isinstance(obs, list):
-            question = [o.question for o in obs]
+            question = torch.tensor(np.stack([o.question for o in obs]))
             dom = [o.dom for o in obs]
             screenshot = torch.stack([o.screenshot for o in obs])
         else:
-            question = [obs.question]
+            question = torch.tensor([obs.question])
             dom = [obs.dom]
             screenshot = obs.screenshot.unsqueeze(0)
         
@@ -1177,32 +1199,29 @@ class MiniWobEmbedder(Embedder):
         assert len(question) == screenshot.shape[0], "Batch size mismatch"
         B = len(question)
 
-        question_embedding = self.question_embedder(obs).unsqueeze(0)
+        question_embedding = self.question_embedder(question).unsqueeze(0)
+        pad_mask = torch.zeros((B, 1), dtype=torch.bool).to(device)
         # print(f"Q embedding size {question_embedding.shape}")
-        dom_embedding, pad_mask = self.language_embedder(dom)
-        # print(f"DOM embedding size {dom_embedding.shape}")
-
-        # extra_emb1 = torch.repeat_interleave(self.extra_embedding1, B, dim=0).unsqueeze(1)
-        # extra_emb2 = torch.repeat_interleave(self.extra_embedding2, B, dim=0).unsqueeze(1)
-        # multi_embedding = torch.cat([
-        #     question_embedding,
-        #     screenshot_embedding,
-        # ] + ([dom_embedding] if self.use_dom else [])
-        # + [extra_emb1, extra_emb2], dim=1)
-        multi_embedding = torch.cat([
-            question_embedding,
-            dom_embedding,
-        ], dim=0)
-        # print(f"Multi embedding size {multi_embedding.shape}")
-
-        pad_mask = torch.cat([pad_mask, torch.zeros((B, 1), dtype=torch.bool).to(device)], dim=1)
         # print(f"Pad mask: {pad_mask.shape}")
-        multi_embedding = self.transformer_encoder(multi_embedding, src_key_padding_mask=pad_mask)
-        # res = torch.concat(([dom_embedding.squeeze(1)] if self.use_dom else []) + [
-        #     multi_embedding[:,-2,:],
-        #     multi_embedding[:,-1,:],
-        # ], dim=1).reshape(B, -1)
-        # res = self.linear(multi_embedding[:,0,:])
+
+        if obs[0].dom is not None:
+            dom_embedding, dom_pad_mask = self.dom_embedder(dom)
+            # print(f"DOM embedding size {dom_embedding.shape}")
+            question_embedding = torch.cat([question_embedding, dom_embedding], dim=0)
+            # print(f"Q embedding size {question_embedding.shape}")
+            pad_mask = torch.cat([pad_mask, dom_pad_mask], dim=1)
+            # print(f"Pad mask: {pad_mask.shape}")
+
+        if obs[0].screenshot is not None:
+            screenshot_embedding = self.screenshot_embedder(screenshot).permute(1, 0, 2)
+            # print(f"Screenshot embedding size {screenshot_embedding.shape}")
+            question_embedding = torch.cat([question_embedding, screenshot_embedding], dim=0)
+            # print(f"Q embedding size {question_embedding.shape}")
+            pad_mask = torch.cat([pad_mask, torch.zeros((B, screenshot_embedding.shape[0]), dtype=torch.bool).to(device)], dim=1)
+            # print(f"Pad mask: {pad_mask.shape}")
+
+        multi_embedding = self.transformer_encoder(question_embedding, src_key_padding_mask=pad_mask)
+        # print(f"Multi embedding size {multi_embedding.shape}")
         return self.linear(multi_embedding[0,:,:])
 
 
