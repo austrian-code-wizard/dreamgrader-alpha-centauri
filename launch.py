@@ -37,10 +37,10 @@ python3 --version
 
 # Print command
 echo "Running the following command:"
-echo "python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob_vec.json -s {seed}"
+echo "python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob.json -s {seed}"
 
 # Run command
-python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob_vec.json -s {seed}
+python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob.json -s {seed}
 
 # Done
 echo "Done"
