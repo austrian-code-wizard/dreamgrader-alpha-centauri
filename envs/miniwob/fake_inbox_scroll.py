@@ -18,13 +18,11 @@ from gym import spaces
 import render
 import meta_exploration
 from envs.miniwob.inbox import EmailInboxObservation
-from envs.miniwob.constants import NUM_INSTANCES, TASK_HEIGHT, TASK_WIDTH, ASCII_CHARSET, TEXT_MAX_LENGTH
+from envs.miniwob.constants import NUM_INSTANCES, TASK_HEIGHT, TASK_WIDTH, ASCII_CHARSET, TEXT_MAX_LENGTH, SYMBOLS, SIZES
 
 
 # Constants
 NUM_EMAILS = 7
-SYMBOLS = ["■", "▲", "◆", "▼", "●", "◖", "★"]
-SIZES = ['small', 'medium', 'large']
 
 # Actions
 SCROLL_DOWN = 0

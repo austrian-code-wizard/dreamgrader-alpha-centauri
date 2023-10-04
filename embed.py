@@ -881,36 +881,21 @@ class MiniWobScreenshotEmbedder(Embedder):
     def __init__(self, observation_space, embed_dim=512):
         super().__init__(embed_dim)
 
-        """self._network = nn.Sequential(
-                Residual(1, 32, use_1x1conv=True, strides=2),
-                Residual(32, 128, use_1x1conv=True, strides=2),
-                Residual(128, 256, use_1x1conv=True, strides=2),
-                Residual(256, embed_dim, use_1x1conv=True, strides=2)
-        )"""
-        """self._network = nn.Sequential(
-                nn.Conv2d(1, 32, kernel_size=3, stride=2),
-                nn.ReLU(),
-                nn.Conv2d(32, 64, kernel_size=3, stride=2),
-                nn.ReLU(),
-                nn.Conv2d(64, 128, kernel_size=4, stride=2),
-                nn.ReLU(),
-                nn.Conv2d(128, embed_dim, kernel_size=4, stride=2)
-        )"""
         self._network = nn.Sequential(
-            nn.Conv2d(1, 32, 7, padding=3),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(3, stride=2),
-            nn.Conv2d(32, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(3, stride=2),
-            nn.Conv2d(64, embed_dim, 3, padding=1),
-            nn.BatchNorm2d(embed_dim),
-            nn.ReLU(),
-            nn.MaxPool2d(3, stride=2)
+                nn.Conv2d(1, 32, kernel_size=3, stride=1),
+                nn.BatchNorm2d(32),
+                nn.ReLU(),
+                nn.MaxPool2d(2, stride=2),
+                nn.Conv2d(32, 64, kernel_size=3, stride=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.MaxPool2d(2, stride=2),
+                nn.Conv2d(64, 128, kernel_size=3, stride=1),
+                nn.BatchNorm2d(128),
+                nn.ReLU(),
+                nn.MaxPool2d(2, stride=2),
+                nn.Conv2d(128, embed_dim, kernel_size=3, stride=2)
         )
-        # self.load_state_dict(torch.load("screenshot_encoder_2023-08-04T02:46:37.666328.pth"))
 
     def forward(self, obs):
         # (batch_size, 80, 60, 3)

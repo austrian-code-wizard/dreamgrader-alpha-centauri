@@ -8,7 +8,7 @@
     "use_back_action": false,
     "data_dir": "/scr-ssd/moritzst/data_envs_scroll",
     "use_screenshot_cache": true,
-    "use_doms": false,
+    "use_doms": true,
     "use_screenshots": true,
     "num_demos": 2000
   },
