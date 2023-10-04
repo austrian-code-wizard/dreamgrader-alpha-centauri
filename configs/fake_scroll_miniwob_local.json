@@ -10,7 +10,8 @@
     "use_screenshot_cache": true,
     "num_demos": 4000,
     "use_doms": true,
-    "use_screenshots": true
+    "use_screenshots": true,
+    "use_scroll_state": true
   },
   "instruction_agent": {
     "type": "learned",

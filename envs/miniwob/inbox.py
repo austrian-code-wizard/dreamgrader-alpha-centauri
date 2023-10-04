@@ -180,20 +180,26 @@ class EmailInboxObservation:
     @property
     def dom(self):
         return self._observation["dom"]
+    
+    @property
+    def scroll_state(self):
+        return self._observation["scroll_state"]
 
     def cpu(self):
         # Hacky way to accomodate cpu/cuda switching in observation buffer
         return EmailInboxObservation({
             "screenshot": self._observation["screenshot"].detach().cpu() if self._observation["screenshot"] is not None else None,
             "question": self._observation["question"],
-            "dom": self._observation["dom"]
+            "dom": self._observation["dom"],
+            "scroll_state": self._observation["scroll_state"]
         })
 
     def pin_memory(self):
         return EmailInboxObservation({
             "screenshot": self._observation["screenshot"].pin_memory() if self._observation["screenshot"] is not None else None,
             "question": self._observation["question"],
-            "dom": self._observation["dom"]
+            "dom": self._observation["dom"],
+            "scroll_state": self._observation["scroll_state"]
         })
 
     def cuda(self, **kwargs):
@@ -202,5 +208,6 @@ class EmailInboxObservation:
         return EmailInboxObservation({
             "screenshot": self._observation["screenshot"].cuda(**kwargs) if self._observation["screenshot"] is not None else None,
             "question": self._observation["question"],
-            "dom": self._observation["dom"]
+            "dom": self._observation["dom"],
+            "scroll_state": self._observation["scroll_state"]
         })

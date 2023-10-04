@@ -259,6 +259,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     USE_CACHE = None
     USE_SCREENSHOTS = None
     USE_DOMS = None
+    USE_SCROLL_STATE = None
 
     ITER = None
     SCREENSHOT_CACHE = {}
@@ -281,6 +282,8 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
             obs_space['screenshot'] = gym.spaces.Box(low=0, high=255, shape=(TASK_HEIGHT, TASK_WIDTH, 1), dtype=np.uint8)
         if type(self).USE_DOMS:
             obs_space['dom'] = gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET)
+        if type(self).USE_SCROLL_STATE:
+            obs_space['scroll_state'] = gym.spaces.Box(low=np.array([0]), high=np.array([2]), dtype=np.int)
  
         self.observation_space = gym.spaces.Dict({
             "observation": gym.spaces.Sequence(
@@ -314,6 +317,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.USE_CACHE = config.get("use_cache", False)
         cls.USE_SCREENSHOTS = config.get("use_screenshots", True)
         cls.USE_DOMS = config.get("use_doms", True)
+        cls.USE_SCROLL_STATE = config.get("use_scroll_state", False)
 
 
     @classmethod
@@ -417,6 +421,15 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         return dom
     
 
+    def _get_scroll_state(self, _, cur_state):
+        vector_state = np.array([0])
+        if cur_state == INBOX_MID:
+            vector_state[0] = 1
+        elif cur_state == INBOX_DOWN:
+            vector_state[0] = 2
+        return vector_state
+    
+
     def _get_state(self, idx: int):
         """
         We are representing the state as a vector with the following dimensions:
@@ -440,7 +453,8 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         return {
             "screenshot": self._get_screenshot(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_SCREENSHOTS else None,
             "question": vector_state,
-            "dom": self._get_dom(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_DOMS else None
+            "dom": self._get_dom(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_DOMS else None,
+            "scroll_state": self._get_scroll_state(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_SCROLL_STATE else None
         }
 
 

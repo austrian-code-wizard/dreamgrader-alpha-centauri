@@ -1189,6 +1189,9 @@ class MiniWobEmbedder(Embedder):
         if observation_space.feature_space.get("screenshot") is not None:
             self.screenshot_embedder = MiniWobScreenshotEmbedder(observation_space.feature_space["screenshot"], embed_dim=type(self).raw_embed_dim)
 
+        if observation_space.feature_space.get("scroll_state") is not None:
+            self.scroll_state_embedder = MiniWobQuestionEmbedder(observation_space.feature_space["scroll_state"], embed_dim=type(self).raw_embed_dim)
+
         encoder_layers = nn.TransformerEncoderLayer(type(self).raw_embed_dim, self.nhead, type(self).raw_embed_dim, self.dropout)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
         self.linear = nn.Linear(type(self).raw_embed_dim, embed_dim)
@@ -1198,10 +1201,12 @@ class MiniWobEmbedder(Embedder):
             question = torch.tensor(np.stack([o.question for o in obs]))
             dom = [o.dom for o in obs]
             screenshot = torch.stack([o.screenshot for o in obs])
+            scroll_state = torch.tensor(np.stack([o.scroll_state for o in obs]))
         else:
             question = torch.tensor([obs.question])
             dom = [obs.dom]
             screenshot = obs.screenshot.unsqueeze(0)
+            scroll_state = torch.tensor([obs.scroll_state])
         
         # Check batch size
         assert len(question) == screenshot.shape[0], "Batch size mismatch"
@@ -1226,6 +1231,13 @@ class MiniWobEmbedder(Embedder):
             question_embedding = torch.cat([question_embedding, screenshot_embedding], dim=0)
             # print(f"Q embedding size {question_embedding.shape}")
             pad_mask = torch.cat([pad_mask, torch.zeros((B, screenshot_embedding.shape[0]), dtype=torch.bool).to(device)], dim=1)
+            # print(f"Pad mask: {pad_mask.shape}")
+
+        if obs[0].scroll_state is not None:
+            scroll_state_embedding = self.scroll_state_embedder(scroll_state).unsqueeze(0)
+            question_embedding = torch.cat([question_embedding, scroll_state_embedding], dim=0)
+            # print(f"Q embedding size {question_embedding.shape}")
+            pad_mask = torch.cat([pad_mask, torch.zeros((B, scroll_state_embedding.shape[0]), dtype=torch.bool).to(device)], dim=1)
             # print(f"Pad mask: {pad_mask.shape}")
 
         multi_embedding = self.transformer_encoder(question_embedding, src_key_padding_mask=pad_mask)
