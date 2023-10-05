@@ -1,19 +1,13 @@
 import os
-import ast
-import csv
 import json
-import torch
-import itertools
-import collections
 
-import pandas as pd
 import torch
+import numpy as np
+import pandas as pd
+from gym import spaces
+import gymnasium as gym
 from torchvision.io import read_image
 from torchvision.transforms import ToPILImage
-import gymnasium as gym
-import numpy as np
-from PIL import Image
-from gym import spaces
 
 import render
 import meta_exploration
@@ -260,6 +254,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     USE_SCREENSHOTS = None
     USE_DOMS = None
     USE_SCROLL_STATE = None
+    USE_CLASSIFICATION = None
 
     ITER = None
     SCREENSHOT_CACHE = {}
@@ -277,7 +272,12 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         self._email_indices = None
         self._email_sizes = None
 
-        obs_space = {'question': gym.spaces.Box(low=np.array([0] * 2), high=np.array([6, 2]), dtype=np.int)}
+        obs_space = {}
+        if not type(self).USE_CLASSIFICATION:
+            obs_space['question'] = gym.spaces.Box(low=np.array([0] * 2), high=np.array([6, 2]), dtype=np.int)
+        else:
+            obs_space['question'] = gym.spaces.Box(low=np.array([0]), high=np.array([6]), dtype=np.int)
+
         if type(self).USE_SCREENSHOTS:
             obs_space['screenshot'] = gym.spaces.Box(low=0, high=255, shape=(TASK_HEIGHT, TASK_WIDTH, 1), dtype=np.uint8)
         if type(self).USE_DOMS:
@@ -290,7 +290,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
                 gym.spaces.Dict(obs_space)
             ),
             "env_id": gym.spaces.Box(np.array([0]),
-                np.array([type(self).NUM_TRAIN + type(self).NUM_TEST + 1]),
+                np.array([1 if not type(self).USE_CLASSIFICATION else 2]),
                 dtype=np.int)
         })
         self.action_space = gym.spaces.Discrete(type(self).NUM_ACTIONS_WITH_BACK if type(self).USE_BACK_ACTION else type(self).NUM_ACTIONS_NO_BACK)
@@ -318,6 +318,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.USE_SCREENSHOTS = config.get("use_screenshots", True)
         cls.USE_DOMS = config.get("use_doms", True)
         cls.USE_SCROLL_STATE = config.get("use_scroll_state", False)
+        cls.USE_CLASSIFICATION = config.get("use_classification", False)
 
 
     @classmethod
@@ -442,13 +443,17 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
             0-2 # Which size are we asking about
         ]
         """
-        vector_state = np.zeros((2))
+        if not type(self).USE_CLASSIFICATION:
+            vector_state = np.zeros((2))
 
-        # Set which email we are asking about
-        vector_state[0] = self._email_indices[idx]
+            # Set which email we are asking about
+            vector_state[0] = self._email_indices[idx]
 
-        # Set which size we are asking about
-        vector_state[1] = self._email_sizes[idx]
+            # Set which size we are asking about
+            vector_state[1] = self._email_sizes[idx]
+        else:
+            vector_state = np.zeros((1))
+            vector_state[0] = self._email_indices[idx]
 
         return {
             "screenshot": self._get_screenshot(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_SCREENSHOTS else None,
@@ -468,9 +473,12 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
             symbol_order = [e["symbol"] for e in emails]
             email_number = symbol_order.index(symbol)
         
-        question = f"Is the {'1st' if email_number == 0 else '2nd' if email_number == 1 else '3rd' if email_number == 2 else f'{email_number+1}th'} email body {font_size}?"
-
-        label = emails[email_number]["font_size"] == font_size
+        if not type(self).USE_CLASSIFICATION:
+            question = f"Is the {'1st' if email_number == 0 else '2nd' if email_number == 1 else '3rd' if email_number == 2 else f'{email_number+1}th'} email body {font_size}?"
+            label = emails[email_number]["font_size"] == font_size
+        else:
+            question = f"What is the font size of the {'1st' if email_number == 0 else '2nd' if email_number == 1 else '3rd' if email_number == 2 else f'{email_number+1}th'} email body?"
+            label = SIZES.index(emails[email_number]["font_size"])
         return question, label, email_number
     
 
@@ -499,7 +507,7 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
             img = render.Render(img)
             img.write_text("Underlying env ID: {}".format(self._env_id[i]))
             question = self._questions[i]
-            if type(self).USE_SYMBOL_QUERIES:
+            if type(self).USE_SYMBOL_QUERIES and not type(self).USE_CLASSIFICATION:
                 emails = json.loads(self.DF.iloc[self._env_numbers[i], 1])
                 symbol = emails[self._email_indices[i]]["symbol"]
                 question = question.split()
@@ -508,7 +516,10 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
                 question.insert(3, f"({self._email_indices[i]+1})")
                 question = " ".join(question)
             img.write_text(f"Q: {question}")
-            img.write_text(f"A: {self._labels[i]}")
+            if not type(self).USE_CLASSIFICATION:
+                img.write_text(f"A: {self._labels[i]}")
+            else:
+                img.write_text(f"A: {SIZES[self._labels[i]]}")
             imgs.append(img)
         return imgs
     
@@ -518,9 +529,16 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
 
     def set_underlying_env_id(self, id):
         self._env_id = id
-        self._env_numbers = [idx // (NUM_EMAILS * len(SIZES)) for idx in id]
-        self._email_indices = [(idx % (NUM_EMAILS * len(SIZES))) // len(SIZES) for idx in id]
-        self._email_sizes = [(idx % (NUM_EMAILS * len(SIZES))) % len(SIZES) for idx in id]
+        
+        if not type(self).USE_CLASSIFICATION:
+            self._env_numbers = [idx // (NUM_EMAILS * len(SIZES)) for idx in id]
+            self._email_indices = [(idx % (NUM_EMAILS * len(SIZES))) // len(SIZES) for idx in id]
+            self._email_sizes = [(idx % (NUM_EMAILS * len(SIZES))) % len(SIZES) for idx in id]
+        else:
+            self._env_numbers = [idx // NUM_EMAILS for idx in id]
+            self._email_indices = [idx % NUM_EMAILS for idx in id]
+            self._email_sizes = [0 for _ in range(NUM_INSTANCES)]
+            
         question_labels = [self._generate_question_and_label(env_number, email_number, email_size) for env_number, email_number, email_size in zip(self._env_numbers, self._email_indices, self._email_sizes)]
         self._questions = [q for (q, _, _) in question_labels]
         self._labels = [l for (_, l, _) in question_labels]

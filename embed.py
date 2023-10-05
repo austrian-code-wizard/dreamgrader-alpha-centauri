@@ -125,7 +125,7 @@ class TransitionEmbedder(Embedder):
 
 
 class TrajectoryEmbedder(Embedder, relabel.RewardLabeler):
-    def __init__(self, transition_embedder, id_embedder, penalty, embed_dim):
+    def __init__(self, transition_embedder, id_embedder, penalty, embed_dim, decoder_output_dim=2):
         super().__init__(embed_dim)
 
         self._transition_embedder = transition_embedder
@@ -134,7 +134,8 @@ class TrajectoryEmbedder(Embedder, relabel.RewardLabeler):
         self._transition_fc_layer = nn.Linear(128, 128)
         self._transition_output_layer = nn.Linear(128, embed_dim)
         # Outputs binary prediction
-        self._decoder_head = nn.Linear(embed_dim, 2)
+        # TODO: make this configurable based on whether doing binary or multiclass
+        self._decoder_head = nn.Linear(embed_dim, decoder_output_dim)
         self._penalty = penalty
         self._use_ids = True
 
@@ -397,7 +398,8 @@ class InstructionPolicyEmbedder(Embedder):
             trajectory_embedder = TrajectoryEmbedder(
                     transition_embedder, id_embedder,
                     config.get("trajectory_embedder").get("penalty"),
-                    transition_embedder.embed_dim)
+                    transition_embedder.embed_dim,
+                    decoder_output_dim=config.get("trajectory_embedder").get("decoder_output_dim"))
         else:
             raise ValueError("Unsupported trajectory embedder {}".format(
                 config.get("trajectory_embedder")))

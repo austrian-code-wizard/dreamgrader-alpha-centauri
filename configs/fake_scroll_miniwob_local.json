@@ -11,14 +11,16 @@
     "num_demos": 4000,
     "use_doms": true,
     "use_screenshots": true,
-    "use_scroll_state": true
+    "use_scroll_state": true,
+    "use_classification": true
   },
   "instruction_agent": {
     "type": "learned",
     "policy": {
       "embedder": {
         "trajectory_embedder": {
-          "penalty": 0
+          "penalty": 0.0,
+          "decoder_output_dim": 3
         },
         "transition_embedder": {
            "reward_embed_dim": 32
