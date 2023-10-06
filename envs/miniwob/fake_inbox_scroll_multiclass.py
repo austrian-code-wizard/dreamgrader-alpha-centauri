@@ -1,4 +1,5 @@
 import os
+import re
 import json
 
 import torch
@@ -12,7 +13,7 @@ from torchvision.transforms import ToPILImage
 import render
 import meta_exploration
 from envs.miniwob.inbox import EmailInboxObservation
-from envs.miniwob.constants import TASK_HEIGHT, TASK_WIDTH, ASCII_CHARSET, TEXT_MAX_LENGTH, SYMBOLS, SIZES
+from envs.miniwob.constants import TASK_HEIGHT, TASK_WIDTH, ASCII_CHARSET, TEXT_MAX_LENGTH, SYMBOLS, SIZES, PEOPLE_NAMES, LOREM_WORDS
 
 
 # Constants
@@ -38,125 +39,195 @@ EMAIL_5 = 7
 EMAIL_6 = 8
 EMAIL_7 = 9
 
+# Features
+FEATURES = {
+    "symbol": {
+        "values": SYMBOLS,
+        "extractor": lambda email: SYMBOLS.index(email["symbol"])
+    },
+    "body_size": {
+        "values": SIZES,
+        "extractor": lambda email: SIZES.index(email["font_size"])
+    },
+    "sender_name": {
+        "values": PEOPLE_NAMES,
+        "extractor": lambda email: PEOPLE_NAMES.index(email["raw_name"])
+    },
+    "subject_first_word": {
+        "values": LOREM_WORDS,
+        "extractor": lambda email: LOREM_WORDS.index(re.sub(r'[^a-z]', '', email["subject"].split()[0].lower()))
+    },
+    "body_last_word": {
+        "values": LOREM_WORDS,
+        "extractor": lambda email: LOREM_WORDS.index(re.sub(r'[^a-z]', '', email["body"].split()[-1].lower()))
+    },
+    "index": {
+        "values": [str(i) for i in range(NUM_EMAILS)],
+        "extractor": lambda email: email["idx"]
+    }
+}
 
+"""
+Demos are formatted as follows:
+
+current state: {
+    desired state: action
+}
+"""
 DEMOS = {
     INBOX_UP: {
-        0: CLICK_UP,
-        1: CLICK_MID,
-        2: CLICK_DOWN,
-        3: SCROLL_DOWN,
-        4: SCROLL_DOWN,
-        5: SCROLL_DOWN,
-        6: SCROLL_DOWN,
+        INBOX_UP: SCROLL_UP,
+        INBOX_MID: SCROLL_DOWN,
+        INBOX_DOWN: SCROLL_DOWN,
+        EMAIL_1: CLICK_UP,
+        EMAIL_2: CLICK_MID,
+        EMAIL_3: CLICK_DOWN,
+        EMAIL_4: SCROLL_DOWN,
+        EMAIL_5: SCROLL_DOWN,
+        EMAIL_6: SCROLL_DOWN,
+        EMAIL_7: SCROLL_DOWN,
     },
     INBOX_MID: {
-        0: SCROLL_UP,
-        1: SCROLL_UP,
-        2: CLICK_UP,
-        3: CLICK_MID,
-        4: CLICK_DOWN,
-        5: SCROLL_DOWN,
-        6: SCROLL_DOWN
+        INBOX_UP: SCROLL_UP,
+        INBOX_DOWN: SCROLL_DOWN,
+        EMAIL_1: SCROLL_UP,
+        EMAIL_2: SCROLL_UP,
+        EMAIL_3: CLICK_UP,
+        EMAIL_4: CLICK_MID,
+        EMAIL_5: CLICK_DOWN,
+        EMAIL_6: SCROLL_DOWN,
+        EMAIL_7: SCROLL_DOWN
     },
     INBOX_DOWN: {
-        0: SCROLL_UP,
-        1: SCROLL_UP,
-        2: SCROLL_UP,
-        3: SCROLL_UP,
-        4: CLICK_UP,
-        5: CLICK_MID,
-        6: CLICK_DOWN
+        INBOX_UP: SCROLL_UP,
+        INBOX_MID: SCROLL_UP,
+        INBOX_DOWN: SCROLL_DOWN,
+        EMAIL_1: SCROLL_UP,
+        EMAIL_2: SCROLL_UP,
+        EMAIL_3: SCROLL_UP,
+        EMAIL_4: SCROLL_UP,
+        EMAIL_5: CLICK_UP,
+        EMAIL_6: CLICK_MID,
+        EMAIL_7: CLICK_DOWN
     }
 }
 
-# Formatted as current_state: desired_state: action
 DEMOS_WITH_BACK = {
     INBOX_UP: {
-        0: CLICK_UP,
-        1: CLICK_MID,
-        2: CLICK_DOWN,
-        3: SCROLL_DOWN,
-        4: SCROLL_DOWN,
-        5: SCROLL_DOWN,
-        6: SCROLL_DOWN,
+        INBOX_UP: SCROLL_UP,
+        INBOX_MID: SCROLL_DOWN,
+        INBOX_DOWN: SCROLL_DOWN,
+        EMAIL_1: CLICK_UP,
+        EMAIL_2: CLICK_MID,
+        EMAIL_3: CLICK_DOWN,
+        EMAIL_4: SCROLL_DOWN,
+        EMAIL_5: SCROLL_DOWN,
+        EMAIL_6: SCROLL_DOWN,
+        EMAIL_7: SCROLL_DOWN,
     },
     INBOX_MID: {
-        0: SCROLL_UP,
-        1: SCROLL_UP,
-        2: CLICK_UP,
-        3: CLICK_MID,
-        4: CLICK_DOWN,
-        5: SCROLL_DOWN,
-        6: SCROLL_DOWN
+        INBOX_UP: SCROLL_UP,
+        INBOX_DOWN: SCROLL_DOWN,
+        EMAIL_1: SCROLL_UP,
+        EMAIL_2: SCROLL_UP,
+        EMAIL_3: CLICK_UP,
+        EMAIL_4: CLICK_MID,
+        EMAIL_5: CLICK_DOWN,
+        EMAIL_6: SCROLL_DOWN,
+        EMAIL_7: SCROLL_DOWN
     },
     INBOX_DOWN: {
-        0: SCROLL_UP,
-        1: SCROLL_UP,
-        2: SCROLL_UP,
-        3: SCROLL_UP,
-        4: CLICK_UP,
-        5: CLICK_MID,
-        6: CLICK_DOWN
+        INBOX_UP: SCROLL_UP,
+        INBOX_MID: SCROLL_UP,
+        INBOX_DOWN: SCROLL_DOWN,
+        EMAIL_1: SCROLL_UP,
+        EMAIL_2: SCROLL_UP,
+        EMAIL_3: SCROLL_UP,
+        EMAIL_4: SCROLL_UP,
+        EMAIL_5: CLICK_UP,
+        EMAIL_6: CLICK_MID,
+        EMAIL_7: CLICK_DOWN
     },
     EMAIL_1: {
-        1: BACK,
-        2: BACK,
-        3: BACK,
-        4: BACK,
-        5: BACK,
-        6: BACK
+        INBOX_UP: BACK,
+        INBOX_MID: BACK,
+        INBOX_DOWN: BACK,
+        EMAIL_2: BACK,
+        EMAIL_3: BACK,
+        EMAIL_4: BACK,
+        EMAIL_5: BACK,
+        EMAIL_6: BACK,
+        EMAIL_7: BACK
     },
     EMAIL_2: {
-        0: BACK,
-        2: BACK,
-        3: BACK,
-        4: BACK,
-        5: BACK,
-        6: BACK
+        INBOX_UP: BACK,
+        INBOX_MID: BACK,
+        INBOX_DOWN: BACK,
+        EMAIL_1: BACK,
+        EMAIL_3: BACK,
+        EMAIL_4: BACK,
+        EMAIL_5: BACK,
+        EMAIL_6: BACK,
+        EMAIL_7: BACK
     },
     EMAIL_3: {
-        0: BACK,
-        1: BACK,
-        3: BACK,
-        4: BACK,
-        5: BACK,
-        6: BACK
+        INBOX_UP: BACK,
+        INBOX_MID: BACK,
+        INBOX_DOWN: BACK,
+        EMAIL_1: BACK,
+        EMAIL_2: BACK,
+        EMAIL_4: BACK,
+        EMAIL_5: BACK,
+        EMAIL_6: BACK,
+        EMAIL_7: BACK
     },
     EMAIL_4: {
-        0: BACK,
-        1: BACK,
-        2: BACK,
-        4: BACK,
-        5: BACK,
-        6: BACK
+        INBOX_UP: BACK,
+        INBOX_MID: BACK,
+        INBOX_DOWN: BACK,
+        EMAIL_1: BACK,
+        EMAIL_2: BACK,
+        EMAIL_3: BACK,
+        EMAIL_5: BACK,
+        EMAIL_6: BACK,
+        EMAIL_7: BACK
     },
     EMAIL_5: {
-        0: BACK,
-        1: BACK,
-        2: BACK,
-        3: BACK,
-        5: BACK,
-        6: BACK
+        INBOX_UP: BACK,
+        INBOX_MID: BACK,
+        INBOX_DOWN: BACK,
+        EMAIL_1: BACK,
+        EMAIL_2: BACK,
+        EMAIL_3: BACK,
+        EMAIL_4: BACK,
+        EMAIL_6: BACK,
+        EMAIL_7: BACK
     },
     EMAIL_6: {
-        0: BACK,
-        1: BACK,
-        2: BACK,
-        3: BACK,
-        4: BACK,
-        6: BACK
+        INBOX_UP: BACK,
+        INBOX_MID: BACK,
+        INBOX_DOWN: BACK,
+        EMAIL_1: BACK,
+        EMAIL_2: BACK,
+        EMAIL_3: BACK,
+        EMAIL_4: BACK,
+        EMAIL_5: BACK,
+        EMAIL_7: BACK
     },
     EMAIL_7: {
-        0: BACK,
-        1: BACK,
-        2: BACK,
-        3: BACK,
-        4: BACK,
-        5: BACK
+        INBOX_UP: BACK,
+        INBOX_MID: BACK,
+        INBOX_DOWN: BACK,
+        EMAIL_1: BACK,
+        EMAIL_2: BACK,
+        EMAIL_3: BACK,
+        EMAIL_4: BACK,
+        EMAIL_5: BACK,
+        EMAIL_6: BACK
     }
 }
 
-
+# Describes which screenshot state to show after a given action
 TRANSITIONS = {
     INBOX_UP: {
         SCROLL_DOWN: INBOX_MID,
@@ -216,10 +287,14 @@ class InstructionWrapper(meta_exploration.InstructionWrapper):
         self._exploitation = exploitation
         self.env.exploitation = exploitation
         if exploitation:
-            self.action_space = spaces.Discrete(3)
+            unique_feature_values = []
+            for f in FakeInboxScrollMulticlassMetaEnv.TARGET_FEATURES:
+                if FEATURES[f]["values"] not in unique_feature_values:
+                    unique_feature_values.append(FEATURES[f]["values"])
+            self.action_space = spaces.Discrete(sum(len(f) for f in unique_feature_values))
 
     def _instruction_observation_space(self):
-        return gym.spaces.Box(np.array([0]), np.array([2]), dtype=np.int)
+        return gym.spaces.Box(np.array([0]), np.array([1]), dtype=np.int)
 
     def _reward(self, instruction_state, action, original_reward):
         return original_reward, False
@@ -242,7 +317,7 @@ class InstructionWrapper(meta_exploration.InstructionWrapper):
         return self.env.step(action)
 
 
-class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
+class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
     MAX_STEPS = None
     NUM_TRAIN = None
     NUM_TEST = None
@@ -256,6 +331,8 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     USE_DOMS = None
     USE_SCROLL_STATE = None
     USE_CLASSIFICATION = None
+    QUERY_FEATURES = None
+    TARGET_FEATURES = None
 
     ITER = None
     SCREENSHOT_CACHE = {}
@@ -268,16 +345,27 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     def __init__(self, env_id, _):
         super().__init__(env_id, EmailInboxObservation)
         self._steps = 0
-        self.cur_states = [0 for _ in range(len(env_id))]
-        self._env_numbers = None
-        self._email_indices = None
-        self._email_sizes = None
+        self.states = [{
+            "current_state": INBOX_UP,
+            "target_state": None,
+            "query_feature": None,
+            "query_feature_value": None,
+            "target_feature": None,
+            "target_feature_value": None,
+            "question": None,
+            "label": None,
+            "inbox_id": None,
+            "correct_answer": None
+        } for _ in range(len(env_id))]
 
         obs_space = {}
-        if not type(self).USE_CLASSIFICATION:
-            obs_space['question'] = gym.spaces.Box(low=np.array([0] * 2), high=np.array([6, 2]), dtype=np.int)
-        else:
-            obs_space['question'] = gym.spaces.Box(low=np.array([0]), high=np.array([6]), dtype=np.int)
+
+        # Question space is [query feature index, query feature value, target feature index]
+        obs_space['question'] = gym.spaces.Box(low=np.array([0, 0, 0]), high=np.array([
+            len(type(self).QUERY_FEATURES) - 1,
+            max([len(FEATURES[f]["values"]) for f in type(self).QUERY_FEATURES]) - 1,
+            len(type(self).TARGET_FEATURES) - 1
+        ]), dtype=np.int)
 
         if type(self).USE_SCREENSHOTS:
             obs_space['screenshot'] = gym.spaces.Box(low=0, high=255, shape=(TASK_HEIGHT, TASK_WIDTH, 1), dtype=np.uint8)
@@ -285,15 +373,20 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
             obs_space['dom'] = gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET)
         if type(self).USE_SCROLL_STATE:
             obs_space['scroll_state'] = gym.spaces.Box(low=np.array([0]), high=np.array([2]), dtype=np.int)
- 
+
+        unique_feature_values = []
+        for f in type(self).TARGET_FEATURES:
+            if FEATURES[f]["values"] not in unique_feature_values:
+                unique_feature_values.append(FEATURES[f]["values"])
         self.observation_space = gym.spaces.Dict({
             "observation": gym.spaces.Sequence(
                 gym.spaces.Dict(obs_space)
             ),
             "env_id": gym.spaces.Box(np.array([0]),
-                np.array([1 if not type(self).USE_CLASSIFICATION else 2]),
+                np.array([sum(len(f) for f in unique_feature_values) - 1]),
                 dtype=np.int)
         })
+
         self.action_space = gym.spaces.Discrete(type(self).NUM_ACTIONS_WITH_BACK if type(self).USE_BACK_ACTION else type(self).NUM_ACTIONS_NO_BACK)
         self.exploitation = False
         if type(self).DF is None:
@@ -321,6 +414,13 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.USE_SCROLL_STATE = config.get("use_scroll_state", False)
         cls.USE_CLASSIFICATION = config.get("use_classification", False)
 
+        cls.QUERY_FEATURES = config.get("query_features", [])
+        assert len(cls.QUERY_FEATURES) > 0, "Must specify query features"
+        assert all(f in FEATURES for f in cls.QUERY_FEATURES), "Invalid query feature name"
+        cls.TARGET_FEATURES = config.get("target_features")
+        assert len(cls.TARGET_FEATURES) > 0, "Must specify target features"
+        assert all(f in FEATURES for f in cls.TARGET_FEATURES), "Invalid target feature name"
+
 
     @classmethod
     def set_iter(cls, iter):
@@ -337,8 +437,9 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
         actions = []
         demos = DEMOS_WITH_BACK if type(self).USE_BACK_ACTION else DEMOS
         for i in range(len(self.env_id)):
-            if self.cur_states[i] in demos and self._email_indices[i] in demos[self.cur_states[i]]:
-                a = demos[self.cur_states[i]][self._email_indices[i]]
+            state = self.states[i]
+            if state["current_state"] in demos and state["target_state"] in demos[state["current_state"]]:
+                a = demos[state["current_state"]][state["target_state"]]
             else:
                 a = np.random.randint(type(self).NUM_ACTIONS_WITH_BACK if type(self).USE_BACK_ACTION else type(self).NUM_ACTIONS_NO_BACK)
             actions.append(a)
@@ -366,11 +467,11 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
 
     @property
     def env_id(self):
-        return self._labels
+        return [state["correct_answer"] for state in self.states]
 
     @property
     def questions(self):
-        return self._questions
+        return [state["question"] for state in self.states]
 
 
     def _get_next_state(self, cur_state, action):
@@ -444,48 +545,22 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
             0-2 # Which size are we asking about
         ]
         """
-        if not type(self).USE_CLASSIFICATION:
-            vector_state = np.zeros((2))
-
-            # Set which email we are asking about
-            vector_state[0] = self._email_indices[idx]
-
-            # Set which size we are asking about
-            vector_state[1] = self._email_sizes[idx]
-        else:
-            vector_state = np.zeros((1))
-            vector_state[0] = self._email_indices[idx]
+        state = self.states[idx]
+        question = np.array([state["query_feature"], state["query_feature_value"], state["target_feature"]])
 
         return {
-            "screenshot": self._get_screenshot(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_SCREENSHOTS else None,
-            "question": vector_state,
-            "dom": self._get_dom(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_DOMS else None,
-            "scroll_state": self._get_scroll_state(self._env_numbers[idx], self.cur_states[idx]) if type(self).USE_SCROLL_STATE else None
+            "screenshot": self._get_screenshot(state["inbox_id"], state["current_state"]) if type(self).USE_SCREENSHOTS else [0],
+            "question": question,
+            "dom": self._get_dom(state["inbox_id"], state["current_state"]) if type(self).USE_DOMS else None,
+            "scroll_state": self._get_scroll_state(state["inbox_id"], state["current_state"]) if type(self).USE_SCROLL_STATE else None
         }
 
 
-    def _generate_question_and_label(self, env_number, email_number, email_size):
-        emails = json.loads(self.DF.iloc[env_number, 1])
-        font_size = SIZES[email_size]
-        
-        # Only activate if using symbol queries
-        if FakeInboxScrollMetaEnv.USE_SYMBOL_QUERIES:
-            symbol = SYMBOLS[email_number]
-            symbol_order = [e["symbol"] for e in emails]
-            email_number = symbol_order.index(symbol)
-        
-        if not type(self).USE_CLASSIFICATION:
-            question = f"Is the {'1st' if email_number == 0 else '2nd' if email_number == 1 else '3rd' if email_number == 2 else f'{email_number+1}th'} email body {font_size}?"
-            label = emails[email_number]["font_size"] == font_size
-        else:
-            question = f"What is the font size of the {'1st' if email_number == 0 else '2nd' if email_number == 1 else '3rd' if email_number == 2 else f'{email_number+1}th'} email body?"
-            label = SIZES.index(emails[email_number]["font_size"])
-        return question, label, email_number
-    
-
     def _step(self, action):
         if not self.exploitation:
-                self.cur_states = [self._get_next_state(cur_state, a) for cur_state, a in zip(self.cur_states, action)]
+                for state, a in zip(self.states, action):
+                    state["current_state"] = self._get_next_state(state["current_state"], a)
+
         states = [self._get_state(i) for i in range(len(action))]
         reward = [0] * len(action)
         info = [None] * len(action)
@@ -497,50 +572,79 @@ class FakeInboxScrollMetaEnv(meta_exploration.MetaExplorationEnv):
     def _reset(self):
         # old hack but messes up evaluation of correct answer
         self._steps = 0
-        self.cur_states = [INBOX_UP for _ in range(len(self.env_id))]
+        for s in self.states:
+            s["current_state"] = INBOX_UP
         obs = [self._get_state(i) for i in range(len(self.env_id))]
         return obs
 
     def render(self, mode=None):
         imgs = []
         for i in range(len(self.env_id)):
-            img = ToPILImage()(self._get_screenshot(self._env_numbers[i], self.cur_states[i]).permute(2, 0, 1))
+            state = self.states[i]
+            img = ToPILImage()(self._get_screenshot(state["inbox_id"], state["current_state"]).permute(2, 0, 1))
             img = render.Render(img)
             img.write_text("Underlying env ID: {}".format(self._env_id[i]))
-            question = self._questions[i]
-            if type(self).USE_SYMBOL_QUERIES and not type(self).USE_CLASSIFICATION:
-                emails = json.loads(self.DF.iloc[self._env_numbers[i], 1])
-                symbol = emails[self._email_indices[i]]["symbol"]
-                question = question.split()
-                question.pop(2)
-                question.insert(2, symbol)
-                question.insert(3, f"({self._email_indices[i]+1})")
-                question = " ".join(question)
+            question = self.states[i]["question"]
             img.write_text(f"Q: {question}")
-            if not type(self).USE_CLASSIFICATION:
-                img.write_text(f"A: {self._labels[i]}")
-            else:
-                img.write_text(f"A: {SIZES[self._labels[i]]}")
+            label = self.states[i]["label"]
+            img.write_text(f"A: {label}")
             imgs.append(img)
         return imgs
     
     @property
     def underlying_env_id(self):
         return self._env_id
+    
+
+    def _configure_env(self, id, env):
+
+        # We have N inboxes where each inbox has M emails with Q queries with T targets
+        ids_per_inbox = NUM_EMAILS * len(type(self).QUERY_FEATURES) * len(type(self).TARGET_FEATURES)
+        env["inbox_id"] = id // ids_per_inbox
+
+        # Fetch emails as JSON
+        emails = json.loads(self.DF.iloc[env["inbox_id"], 1])
+
+        # To get the ID of the email, we know that we can mod it by the number of emails per inbox,
+        # then divide by the number of queries times targets per email
+        ids_per_email = len(type(self).QUERY_FEATURES) * len(type(self).TARGET_FEATURES)
+        env["target_email"] = (id % ids_per_inbox) // ids_per_email
+
+        # To get the query feature, we can mode by the number of elements per email and divide by
+        # the nuber of elements per query
+        ids_per_query = len(type(self).TARGET_FEATURES)
+        env["query_feature"] = (id % ids_per_email) // ids_per_query
+
+        # To get the target feature, we mod by the number of elements per query
+        env["target_feature"] = id % ids_per_query
+
+        # Set the desired final state of exploration
+        env["target_state"] = EMAIL_1 + env["target_email"] if type(self).TARGET_FEATURES[env["target_feature"]] in ["body_size", "body_last_word"] else env["target_email"] // 3
+
+        # Set the query feature value of the target email
+        env["query_feature_value"] = FEATURES[type(self).QUERY_FEATURES[env["query_feature"]]]["extractor"](emails[env["target_email"]])
+
+        # Set the value of the target feature
+        env["target_feature_value"] = FEATURES[type(self).TARGET_FEATURES[env["target_feature"]]]["extractor"](emails[env["target_email"]])
+
+        # Env set the question in human language
+        env["question"] = f"What is the {type(self).TARGET_FEATURES[env['target_feature']]} of the email where {type(self).QUERY_FEATURES[env['query_feature']]} is {FEATURES[type(self).QUERY_FEATURES[env['query_feature']]]['values'][env['query_feature_value']]}?"
+
+        # Set the answer to the question in human language
+        env["label"] = FEATURES[type(self).TARGET_FEATURES[env['target_feature']]]['values'][env['target_feature_value']]
+
+        # Set the correct answer
+        unique_feature_values = []
+        for f in type(self).TARGET_FEATURES[:env["target_feature"]]:
+            if FEATURES[f]["values"] not in unique_feature_values and FEATURES[f]["values"] != FEATURES[type(self).TARGET_FEATURES[env["target_feature"]]]["values"]:
+                unique_feature_values.append(FEATURES[f]["values"])
+        env["correct_answer"] = sum(
+            len(f) for f in unique_feature_values
+        ) + env["target_feature_value"]
+
+        return env
+
 
     def set_underlying_env_id(self, id):
         self._env_id = id
-        
-        if not type(self).USE_CLASSIFICATION:
-            self._env_numbers = [idx // (NUM_EMAILS * len(SIZES)) for idx in id]
-            self._email_indices = [(idx % (NUM_EMAILS * len(SIZES))) // len(SIZES) for idx in id]
-            self._email_sizes = [(idx % (NUM_EMAILS * len(SIZES))) % len(SIZES) for idx in id]
-        else:
-            self._env_numbers = [idx // NUM_EMAILS for idx in id]
-            self._email_indices = [idx % NUM_EMAILS for idx in id]
-            self._email_sizes = [0 for _ in range(len(id))]
-            
-        question_labels = [self._generate_question_and_label(env_number, email_number, email_size) for env_number, email_number, email_size in zip(self._env_numbers, self._email_indices, self._email_sizes)]
-        self._questions = [q for (q, _, _) in question_labels]
-        self._labels = [l for (_, l, _) in question_labels]
-        self._email_indices = [i for (_, _, i) in question_labels]
+        self.states = [self._configure_env(env_id, env_info) for env_id, env_info in zip(id, self.states)]

@@ -1,15 +1,15 @@
 {
   "environment": {
-    "type": "fake-email-inbox-scroll",
+    "type": "fake-email-inbox-scroll-multiclass",
     "use_symbol_queries": false,
     "max_steps": 4,
-    "num_train": 250000,
-    "num_test": 30000,
+    "num_train": 1000000,
+    "num_test": 100000,
     "use_back_action": false,
-    "data_dir": "/scr-ssd/moritzst/data_envs_scroll",
+    "data_dir": "/scr-ssd/moritzst/data_envs_scroll_2",
     "use_screenshot_cache": true,
     "use_doms": true,
-    "use_screenshots": true,
+    "use_screenshots": false,
     "num_demos": 2000,
     "use_scroll_state": true,
     "use_classification": true
@@ -21,7 +21,7 @@
         "use_dom": false,
         "trajectory_embedder": {
           "penalty": 0,
-          "decoder_output_dim": 3
+          "decoder_output_dim": 33
         },
         "transition_embedder": {
           "reward_embed_dim": 32

@@ -13,7 +13,7 @@ from torchtext.vocab import build_vocab_from_iterator
 from envs import bounce
 from envs import grid
 from envs import miniwob
-from envs.miniwob.constants import QUESTIONS, PEOPLE_NAMES, LOREM_WORDS, HTML_TOKENS
+from envs.miniwob.constants import QUESTIONS, PEOPLE_NAMES, LOREM_WORDS, HTML_TOKENS, SYMBOLS
 import relabel
 import utils
 
@@ -71,7 +71,7 @@ def get_state_embedder(env):
         return BounceEmbedder
     elif isinstance(env.unwrapped, miniwob.fake_inbox_scroll_vectorized.FakeInboxScrollVectorizedMetaEnv):
         return MiniWobVectorizedEmbedderV2
-    elif isinstance(env.unwrapped, miniwob.inbox.InboxMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox.FakeInboxMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox_scroll.FakeInboxScrollMetaEnv):
+    elif isinstance(env.unwrapped, miniwob.inbox.InboxMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox.FakeInboxMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox_scroll.FakeInboxScrollMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox_scroll_multiclass.FakeInboxScrollMulticlassMetaEnv):
         return MiniWobEmbedder
     # Dependencies on OpenGL, so only load if absolutely necessary
     from envs.miniworld import sign
@@ -937,15 +937,35 @@ class Residual(nn.Module):  #@save
 
 
 class MiniWobLanguageEmbedder(Embedder):
+    VOCABULARY = HTML_TOKENS + [w.lower() for w in PEOPLE_NAMES] + LOREM_WORDS + SYMBOLS
+
     def __init__(self, observation_space, embed_dim=256):
         super().__init__(embed_dim)
 
-        self.tokenizer = lambda x: re.sub(r'>[^<]+<', '> <', x).replace("<", "").replace(">", "").split()
-        self.vocab = build_vocab_from_iterator([HTML_TOKENS], specials=["<unk>", "<pad>", "<bos>"])               
+        self.tokenizer = self._tokenize
+        self.vocab = build_vocab_from_iterator([type(self).VOCABULARY], specials=["<unk>", "<pad>", "<bos>"])               
         self.vocab.set_default_index(self.vocab["<unk>"])
         self.embed = nn.Embedding(len(self.vocab), self.embed_dim)
+        self.pos_enc = PositionalEncoding(self.embed_dim, max_len=250)
         if torch.cuda.is_available():
             self.embed = self.embed.cuda()
+
+
+    @staticmethod
+    def _tokenize(text):
+        text = text.lower()
+        
+        # Remove punctuation
+        text = text.replace(",", "")
+        text = text.replace(".", "")
+        text = text.replace("<", "")
+        text = text.replace(">", "")
+
+        # Split into tokens
+        text = text.split()
+        
+        # Remove unknown words
+        return [t for t in text if t in MiniWobLanguageEmbedder.VOCABULARY]
         
 
     def forward(self, obs):
@@ -957,6 +977,7 @@ class MiniWobLanguageEmbedder(Embedder):
         src_pad_mask = (obs == self.vocab["<pad>"]).to(device)
         obs = obs.permute(1, 0)
         embeddings = self.embed(obs)
+        embeddings = self.pos_enc(embeddings)
         return embeddings, src_pad_mask
 
 
@@ -1187,12 +1208,18 @@ class MiniWobEmbedder(Embedder):
         self.question_embedder = MiniWobQuestionEmbedder(observation_space.feature_space["question"], type(self).raw_embed_dim)
         if observation_space.feature_space.get("dom") is not None:
             self.dom_embedder = MiniWobLanguageEmbedder(observation_space.feature_space["dom"], embed_dim=type(self).raw_embed_dim)
+        else:
+            self.dom_embedder = None
 
         if observation_space.feature_space.get("screenshot") is not None:
             self.screenshot_embedder = MiniWobScreenshotEmbedder(observation_space.feature_space["screenshot"], embed_dim=type(self).raw_embed_dim)
+        else:
+            self.screenshot_embedder = None
 
         if observation_space.feature_space.get("scroll_state") is not None:
             self.scroll_state_embedder = MiniWobQuestionEmbedder(observation_space.feature_space["scroll_state"], embed_dim=type(self).raw_embed_dim)
+        else:
+            self.screenshot_embedder = None
 
         encoder_layers = nn.TransformerEncoderLayer(type(self).raw_embed_dim, self.nhead, type(self).raw_embed_dim, self.dropout)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
@@ -1219,7 +1246,7 @@ class MiniWobEmbedder(Embedder):
         # print(f"Q embedding size {question_embedding.shape}")
         # print(f"Pad mask: {pad_mask.shape}")
 
-        if obs[0].dom is not None:
+        if self.dom_embedder is not None:
             dom_embedding, dom_pad_mask = self.dom_embedder(dom)
             # print(f"DOM embedding size {dom_embedding.shape}")
             question_embedding = torch.cat([question_embedding, dom_embedding], dim=0)
@@ -1227,7 +1254,7 @@ class MiniWobEmbedder(Embedder):
             pad_mask = torch.cat([pad_mask, dom_pad_mask], dim=1)
             # print(f"Pad mask: {pad_mask.shape}")
 
-        if obs[0].screenshot is not None:
+        if self.screenshot_embedder is not None:
             screenshot_embedding = self.screenshot_embedder(screenshot).permute(1, 0, 2)
             # print(f"Screenshot embedding size {screenshot_embedding.shape}")
             question_embedding = torch.cat([question_embedding, screenshot_embedding], dim=0)
@@ -1235,7 +1262,7 @@ class MiniWobEmbedder(Embedder):
             pad_mask = torch.cat([pad_mask, torch.zeros((B, screenshot_embedding.shape[0]), dtype=torch.bool).to(device)], dim=1)
             # print(f"Pad mask: {pad_mask.shape}")
 
-        if obs[0].scroll_state is not None:
+        if self.scroll_state_embedder is not None:
             scroll_state_embedding = self.scroll_state_embedder(scroll_state).unsqueeze(0)
             question_embedding = torch.cat([question_embedding, scroll_state_embedding], dim=0)
             # print(f"Q embedding size {question_embedding.shape}")

@@ -17,6 +17,7 @@ from envs import bounce
 from envs.miniwob import inbox
 from envs.miniwob import fake_inbox
 from envs.miniwob import fake_inbox_scroll
+from envs.miniwob import fake_inbox_scroll_multiclass
 from envs.miniwob import fake_inbox_scroll_vectorized
 import policy
 import relabel
@@ -229,6 +230,8 @@ def get_env_class(environment_type):
         return fake_inbox_scroll.FakeInboxScrollMetaEnv
     elif environment_type == "fake-email-inbox-scroll-vectorized":
         return fake_inbox_scroll_vectorized.FakeInboxScrollVectorizedMetaEnv
+    elif environment_type == "fake-email-inbox-scroll-multiclass":
+        return fake_inbox_scroll_multiclass.FakeInboxScrollMulticlassMetaEnv
     else:
         raise ValueError(
                 "Unsupported environment type: {}".format(environment_type))
