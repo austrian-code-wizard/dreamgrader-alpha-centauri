@@ -322,7 +322,6 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
     NUM_TRAIN = None
     NUM_TEST = None
     DATA_DIR = None
-    USE_SYMBOL_QUERIES = None
     USE_BACK_ACTION = None
     ENV_ID_SCHEDULE = None
     NUM_DEMOS = None
@@ -330,7 +329,6 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
     USE_SCREENSHOTS = None
     USE_DOMS = None
     USE_SCROLL_STATE = None
-    USE_CLASSIFICATION = None
     QUERY_FEATURES = None
     TARGET_FEATURES = None
 
@@ -400,7 +398,6 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
 
     @classmethod
     def load_config(cls, config: dict = None):
-        cls.USE_SYMBOL_QUERIES = config.get("use_symbol_queries", False)
         cls.DATA_DIR = config.get("data_dir", cls.DEFAULT_DATA_DIR)
         cls.MAX_STEPS = config.get("max_steps", 4)
         cls.NUM_TRAIN = config.get("num_train", 100)
@@ -412,7 +409,6 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.USE_SCREENSHOTS = config.get("use_screenshots", True)
         cls.USE_DOMS = config.get("use_doms", True)
         cls.USE_SCROLL_STATE = config.get("use_scroll_state", False)
-        cls.USE_CLASSIFICATION = config.get("use_classification", False)
 
         cls.QUERY_FEATURES = config.get("query_features", [])
         assert len(cls.QUERY_FEATURES) > 0, "Must specify query features"

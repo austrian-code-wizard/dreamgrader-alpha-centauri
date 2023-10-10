@@ -1,45 +1,59 @@
 {
   "environment": {
     "type": "fake-email-inbox-scroll-multiclass",
-    "use_symbol_queries": false,
-    "max_steps": 4,
-    "num_train": 1000000,
-    "num_test": 100000,
-    "use_back_action": false,
+    "max_steps": 6,
+    "num_train": 450000,
+    "num_test": 50000,
+    "use_back_action": true,
     "data_dir": "/scr-ssd/moritzst/data_envs_scroll_2",
     "use_screenshot_cache": true,
     "use_doms": true,
     "use_screenshots": false,
     "num_demos": 2000,
     "use_scroll_state": true,
-    "use_classification": true
+    "query_features": ["symbol"],
+    "target_features": ["body_size"]
   },
   "instruction_agent": {
     "type": "learned",
     "policy": {
+      "epsilon_schedule": {
+        "begin": 1.0,
+        "end": 0.05,
+        "total_steps": 15000
+      },
       "embedder": {
-        "use_dom": false,
         "trajectory_embedder": {
-          "penalty": 0,
-          "decoder_output_dim": 33
+          "penalty": 0.1,
+          "decoder_output_dim": 3
         },
         "transition_embedder": {
           "reward_embed_dim": 32
         }
+      },
+      "buffer": {
+        "sequence_length": 7
       }
     },
     "update_freq": 4
   },
   "exploration_agent": {
     "policy": {
+      "epsilon_schedule": {
+        "begin": 1.0,
+        "end": 0.05,
+        "total_steps": 15000
+      },
       "embedder": {
-        "use_dom": false,
         "experience_embedder": {
           "state_embed_dim": 64,
           "action_embed_dim": 16,
           "embed_dim": 64
         }
       }
+    },
+    "buffer": {
+      "sequence_length": 7
     }
   }
 }

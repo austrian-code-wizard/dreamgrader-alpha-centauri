@@ -946,7 +946,7 @@ class MiniWobLanguageEmbedder(Embedder):
         self.vocab = build_vocab_from_iterator([type(self).VOCABULARY], specials=["<unk>", "<pad>", "<bos>"])               
         self.vocab.set_default_index(self.vocab["<unk>"])
         self.embed = nn.Embedding(len(self.vocab), self.embed_dim)
-        self.pos_enc = PositionalEncoding(self.embed_dim, max_len=250)
+        self.pos_enc = PositionalEncoding(self.embed_dim, max_len=300)
         if torch.cuda.is_available():
             self.embed = self.embed.cuda()
 

@@ -7,7 +7,7 @@ script = """\
 #SBATCH --partition=iris --qos=normal
 #SBATCH --time=300:00:00
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=80G
 
 # only use the following on partition with GPUs
