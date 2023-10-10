@@ -353,6 +353,7 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
             "target_feature_value": None,
             "question": None,
             "label": None,
+            "inbox_row": None,
             "inbox_id": None,
             "correct_answer": None
         } for _ in range(len(env_id))]
@@ -507,7 +508,7 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
         return img
     
 
-    def _get_dom(self, env_number, cur_state):
+    def _get_dom(self, env_number, env_row, cur_state):
         if (env_number, cur_state) in type(self).DOM_CACHE:
             dom = type(self).DOM_CACHE[(env_number, cur_state)]
         else:
@@ -521,7 +522,7 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
                 dom = f.read()
 
             if cur_state > INBOX_DOWN:
-                emails = json.loads(self.DF.iloc[env_number, 1])
+                emails = json.loads(self.DF.iloc[env_row, 1])
                 size = emails[cur_state - EMAIL_1]["font_size"]
                 dom = dom.replace("<div class=email-body>", f"<div class=email-body size={size}>")
         
@@ -558,7 +559,7 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
         return {
             "screenshot": self._get_screenshot(state["inbox_id"], state["current_state"]) if type(self).USE_SCREENSHOTS else [0],
             "question": question,
-            "dom": self._get_dom(state["inbox_id"], state["current_state"]) if type(self).USE_DOMS else None,
+            "dom": self._get_dom(state["inbox_id"], state["inbox_row"], state["current_state"]) if type(self).USE_DOMS else None,
             "scroll_state": self._get_scroll_state(state["inbox_id"], state["current_state"]) if type(self).USE_SCROLL_STATE else None
         }
 
@@ -607,10 +608,11 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
 
         # We have N inboxes where each inbox has M emails with Q queries with T targets
         ids_per_inbox = NUM_EMAILS * len(type(self).QUERY_FEATURES) * len(type(self).TARGET_FEATURES)
-        env["inbox_id"] = self.DF.iloc[id // ids_per_inbox, 0]
+        env["inbox_row"] = id // ids_per_inbox
+        env["inbox_id"] = self.DF.iloc[env["inbox_row"], 0]
 
         # Fetch emails as JSON
-        emails = json.loads(self.DF.iloc[id // ids_per_inbox, 1])
+        emails = json.loads(self.DF.iloc[env["inbox_row"], 1])
 
         # To get the ID of the email, we know that we can mod it by the number of emails per inbox,
         # then divide by the number of queries times targets per email

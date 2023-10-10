@@ -7,10 +7,10 @@
     "use_screenshot_cache": true,
     "use_doms": true,
     "use_screenshots": false,
-    "num_demos": 2000,
+    "num_demos": 5000,
     "use_scroll_state": true,
-    "query_features": ["symbol"],
-    "target_features": ["body_size"]
+    "query_features": ["sender_name", "symbol", "index"],
+    "target_features": ["body_size", "subject_first_word", "body_last_word"]
   },
   "instruction_agent": {
     "type": "learned",
@@ -23,7 +23,7 @@
       "embedder": {
         "trajectory_embedder": {
           "penalty": 0.1,
-          "decoder_output_dim": 3
+          "decoder_output_dim": 33
         },
         "transition_embedder": {
           "reward_embed_dim": 32
