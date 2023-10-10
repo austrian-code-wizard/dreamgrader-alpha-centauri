@@ -337,6 +337,7 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
     DOM_CACHE = {}
     NUM_ACTIONS_WITH_BACK = 6
     NUM_ACTIONS_NO_BACK = 5
+    NUM_TEST_PERCENTAGE = 0.1
     DEFAULT_DATA_DIR = "/scr-ssd/moritzst/data_envs_scroll"
     DF = None
 
@@ -387,8 +388,6 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
 
         self.action_space = gym.spaces.Discrete(type(self).NUM_ACTIONS_WITH_BACK if type(self).USE_BACK_ACTION else type(self).NUM_ACTIONS_NO_BACK)
         self.exploitation = False
-        if type(self).DF is None:
-            type(self).DF = pd.read_csv(os.path.abspath(f"{self.DATA_DIR}/inbox_samples.csv"))
         
         self.set_underlying_env_id(env_id)
 
@@ -400,8 +399,6 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
     def load_config(cls, config: dict = None):
         cls.DATA_DIR = config.get("data_dir", cls.DEFAULT_DATA_DIR)
         cls.MAX_STEPS = config.get("max_steps", 4)
-        cls.NUM_TRAIN = config.get("num_train", 100)
-        cls.NUM_TEST = config.get("num_test", 10)
         cls.USE_BACK_ACTION = config.get("use_back_action", False)
         cls.ENV_ID_SCHEDULE = config.get("env_id_schedule", None)
         cls.NUM_DEMOS = config.get("num_demos", 0)
@@ -416,6 +413,20 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.TARGET_FEATURES = config.get("target_features")
         assert len(cls.TARGET_FEATURES) > 0, "Must specify target features"
         assert all(f in FEATURES for f in cls.TARGET_FEATURES), "Invalid target feature name"
+
+        if cls.DF is None:
+            cls.DF = pd.read_csv(os.path.abspath(f"{cls.DATA_DIR}/inbox_samples.csv"))
+
+        # Dynamically calculate datatset size
+        if config.get("NUM_TRAIN") is None and config.get("NUM_TEST") is None:
+            ids_per_inbox = NUM_EMAILS * len(cls.QUERY_FEATURES) * len(cls.TARGET_FEATURES)
+            total_ids = len(cls.DF) * ids_per_inbox
+
+            cls.NUM_TRAIN = int(total_ids * (1 - cls.NUM_TEST_PERCENTAGE))
+            cls.NUM_TEST = total_ids - cls.NUM_TRAIN
+        else:
+            cls.NUM_TRAIN = config.get("NUM_TRAIN", 100)
+            cls.NUM_TEST = config.get("NUM_TEST", 10)
 
 
     @classmethod
@@ -596,10 +607,10 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
 
         # We have N inboxes where each inbox has M emails with Q queries with T targets
         ids_per_inbox = NUM_EMAILS * len(type(self).QUERY_FEATURES) * len(type(self).TARGET_FEATURES)
-        env["inbox_id"] = id // ids_per_inbox
+        env["inbox_id"] = self.DF.iloc[id // ids_per_inbox, 0]
 
         # Fetch emails as JSON
-        emails = json.loads(self.DF.iloc[env["inbox_id"], 1])
+        emails = json.loads(self.DF.iloc[id // ids_per_inbox, 1])
 
         # To get the ID of the email, we know that we can mod it by the number of emails per inbox,
         # then divide by the number of queries times targets per email

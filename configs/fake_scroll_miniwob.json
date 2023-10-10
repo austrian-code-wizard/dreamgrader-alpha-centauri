@@ -2,8 +2,6 @@
   "environment": {
     "type": "fake-email-inbox-scroll-multiclass",
     "max_steps": 6,
-    "num_train": 450000,
-    "num_test": 50000,
     "use_back_action": true,
     "data_dir": "/scr-ssd/moritzst/data_envs_scroll_2",
     "use_screenshot_cache": true,
