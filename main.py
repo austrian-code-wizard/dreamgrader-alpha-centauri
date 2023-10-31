@@ -24,6 +24,7 @@ import relabel
 import rl
 import utils
 import time
+from envs import webshop
 from envs.miniwob.constants import NUM_INSTANCES, NUM_DEMOS
 
 
@@ -91,7 +92,7 @@ def run_episode(env, policy, experience_observers=None, test=False,
     render_buffer = buffers["renders"]["test" if test else "train"]["exploitation" if exploitation else "exploration"]
 
     if exploitation:
-        env.set_underlying_env_id([env.underlying_env_id[15 - len(buffers["episodes"]["test" if test else "train"]["exploration"])]] * NUM_INSTANCES)
+        env.set_underlying_env_id([env.underlying_env_id[NUM_INSTANCES - 1 - len(buffers["episodes"]["test" if test else "train"]["exploration"])]] * NUM_INSTANCES)
 
     if len(episode_buffer) == 0:
         episodes, renders = _run_episode(
@@ -147,7 +148,7 @@ def _run_episode(env, policy, experience_observers=None, test=False,
         experience_observers = []
 
     episodes = [[] for _ in range(NUM_INSTANCES)]
-    
+    episode_start = time.time()
     state = env.reset()
     timestep = 0
     renders = [[maybe_render(r, None, 0, timestep)] for r in env.render()]
@@ -166,8 +167,12 @@ def _run_episode(env, policy, experience_observers=None, test=False,
             with torch.no_grad():
                 action_comp_time_start = time.time()
                 # Are we accidentally batching here? Could make smaller?
+                # actions, next_hidden_state = policy.act(
+                #         state, hidden_state if hidden_state is not None else [None] * NUM_INSTANCES, test=test)
+                start = time.time()
                 actions, next_hidden_state = policy.act(
-                        state, hidden_state if hidden_state is not None else [None] * NUM_INSTANCES, test=test)
+                        state, hidden_state, test=test)
+                print(f"Time to run policy: {time.time() - start}")
                 if not exploitation:
                     next_hidden_state = [(h.reshape((1, *h.shape)), c.reshape(1, *c.shape)) for h, c in zip(next_hidden_state[0], next_hidden_state[1])]
                 action_computation_time += time.time() - action_comp_time_start
@@ -194,6 +199,7 @@ def _run_episode(env, policy, experience_observers=None, test=False,
 
         state = next_state
         hidden_state = next_hidden_state
+    print(f"Episode time: {time.time() - episode_start}")
     return episodes, renders
 
 
@@ -232,6 +238,8 @@ def get_env_class(environment_type):
         return fake_inbox_scroll_vectorized.FakeInboxScrollVectorizedMetaEnv
     elif environment_type == "fake-email-inbox-scroll-multiclass":
         return fake_inbox_scroll_multiclass.FakeInboxScrollMulticlassMetaEnv
+    elif environment_type == "webshop":
+        return webshop.WebShopMetaEnv
     else:
         raise ValueError(
                 "Unsupported environment type: {}".format(environment_type))

@@ -294,7 +294,7 @@ class InstructionWrapper(meta_exploration.InstructionWrapper):
             self.action_space = spaces.Discrete(sum(len(f) for f in unique_feature_values))
 
     def _instruction_observation_space(self):
-        return gym.spaces.Box(np.array([0]), np.array([1]), dtype=np.int)
+        return gym.spaces.Box(np.array([0]), np.array([1]), dtype=int)
 
     def _reward(self, instruction_state, action, original_reward):
         return original_reward, False
@@ -365,14 +365,14 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
             len(type(self).QUERY_FEATURES) - 1,
             max([len(FEATURES[f]["values"]) for f in type(self).QUERY_FEATURES]) - 1,
             len(type(self).TARGET_FEATURES) - 1
-        ]), dtype=np.int)
+        ]), dtype=int)
 
         if type(self).USE_SCREENSHOTS:
             obs_space['screenshot'] = gym.spaces.Box(low=0, high=255, shape=(TASK_HEIGHT, TASK_WIDTH, 1), dtype=np.uint8)
         if type(self).USE_DOMS:
             obs_space['dom'] = gym.spaces.Text(min_length=0, max_length=TEXT_MAX_LENGTH, charset=ASCII_CHARSET)
         if type(self).USE_SCROLL_STATE:
-            obs_space['scroll_state'] = gym.spaces.Box(low=np.array([0]), high=np.array([2]), dtype=np.int)
+            obs_space['scroll_state'] = gym.spaces.Box(low=np.array([0]), high=np.array([2]), dtype=int)
 
         unique_feature_values = []
         for f in type(self).TARGET_FEATURES:
@@ -384,7 +384,7 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
             ),
             "env_id": gym.spaces.Box(np.array([0]),
                 np.array([sum(len(f) for f in unique_feature_values) - 1]),
-                dtype=np.int)
+                dtype=int)
         })
 
         self.action_space = gym.spaces.Discrete(type(self).NUM_ACTIONS_WITH_BACK if type(self).USE_BACK_ACTION else type(self).NUM_ACTIONS_NO_BACK)

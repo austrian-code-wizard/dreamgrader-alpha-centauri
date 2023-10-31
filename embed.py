@@ -13,6 +13,7 @@ from torchtext.vocab import build_vocab_from_iterator
 from envs import bounce
 from envs import grid
 from envs import miniwob
+from envs import webshop
 from envs.miniwob.constants import QUESTIONS, PEOPLE_NAMES, LOREM_WORDS, HTML_TOKENS, SYMBOLS
 import relabel
 import utils
@@ -69,6 +70,8 @@ def get_state_embedder(env):
         return BounceImageEmbedder
     elif isinstance(env.unwrapped, bounce.BounceMetaEnv):
         return BounceEmbedder
+    elif isinstance(env.unwrapped, webshop.WebShopMetaEnv):
+        return WebshopEmbedder
     elif isinstance(env.unwrapped, miniwob.fake_inbox_scroll_vectorized.FakeInboxScrollVectorizedMetaEnv):
         return MiniWobVectorizedEmbedderV2
     elif isinstance(env.unwrapped, miniwob.inbox.InboxMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox.FakeInboxMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox_scroll.FakeInboxScrollMetaEnv) or isinstance(env.unwrapped, miniwob.fake_inbox_scroll_multiclass.FakeInboxScrollMulticlassMetaEnv):
@@ -704,7 +707,10 @@ class RecurrentStateEmbedder(Embedder):
         sequence_len = len(states[0])
 
         # Stack batched hidden state
-        if batch_size > 1 and hidden_state is not None:
+        if hidden_state is not None and all(h is None for h in hidden_state):
+            hidden_state = None
+
+        if hidden_state is not None:
             hs = []
             cs = []
             for hidden in hidden_state:
@@ -724,7 +730,7 @@ class RecurrentStateEmbedder(Embedder):
         embeddings = []
         for seq_index in range(sequence_len):
             hidden_state = self._lstm_cell(
-                    state_embeds[:, seq_index, :], hidden_state)
+                state_embeds[:, seq_index, :], hidden_state)
 
             # (batch_size, 1, embed_dim)
             embeddings.append(hidden_state[0].unsqueeze(1))
@@ -1274,6 +1280,76 @@ class MiniWobEmbedder(Embedder):
         return self.linear(multi_embedding[0,:,:])
 
 
+class WebshopEmbedder(Embedder):
+    # nlayers = 8
+    # nhead = 8
+    nlayers = 1 #6  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+    nhead = 1  # number of heads in nn.MultiheadAttention
+    dropout = 0.0  # dropout probability
+    raw_embed_dim = 4096
+
+    SPECIAL_EMBED = 1
+    PAD = 0
+    
+    def __init__(self, observation_space, embed_dim=256):
+        super().__init__(embed_dim)
+
+        self.special_embedding = nn.Embedding(2, self.raw_embed_dim)
+        encoder_layers = nn.TransformerEncoderLayer(type(self).raw_embed_dim, self.nhead, type(self).raw_embed_dim, self.dropout)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
+        self.linear = nn.Linear(type(self).raw_embed_dim, embed_dim)
+
+
+    def pad_and_combine(self, embeddings):
+        # 1. Identify the maximum sequence length
+        max_len = max(embedding.size(0) for embedding in embeddings)
+
+        # List to store padded embeddings
+        padded_embeddings = []
+        padding_masks = []
+
+        # 2. Pad each embedding to the max_len
+        for embedding in embeddings:
+            seq_len = embedding.size(0)
+            padded_embedding = torch.nn.functional.pad(embedding, (0, 0, 0, max_len - seq_len))
+            padded_embeddings.append(padded_embedding)
+            
+            # Construct padding mask for this embedding
+            mask = torch.zeros(seq_len, dtype=torch.bool)
+            mask = torch.nn.functional.pad(mask, (0, max_len - seq_len), value=True)
+            padding_masks.append(mask)
+
+        # 3. Combine embeddings into one batched tensor
+        batched_embeddings = torch.stack(padded_embeddings)
+
+        # 4. Combine masks into one batched tensor
+        batched_masks = torch.stack(padding_masks)
+
+        return batched_embeddings, batched_masks
+
+
+    def forward(self, obs):
+
+        # Turn into B x S x D tensor
+        if isinstance(obs, list):
+            obs, mask = self.pad_and_combine(obs)
+            mask = mask.to(device)
+        else:
+            obs = obs.unsqueeze(0)
+            mask = torch.zeros((1, obs.shape[1]), dtype=torch.bool).to(device)
+        
+        B, S, D = obs.shape
+
+        special_embedding_indices = torch.ones((B, 1), dtype=torch.int32)
+        special_embeddings = self.special_embedding(special_embedding_indices)
+
+        obs = torch.cat([special_embeddings, obs], dim=1)
+        mask = torch.cat([torch.zeros((B, 1), dtype=torch.bool).to(device), mask], dim=1)
+
+        obs = self.transformer_encoder(obs.permute(1, 0, 2), src_key_padding_mask=mask)
+        return self.linear(obs[0,:,:])
+
+
 class SimpleGridStateEmbedder(Embedder):
     """Embedder for SimpleGridEnv states.
 
@@ -1289,7 +1365,7 @@ class SimpleGridStateEmbedder(Embedder):
         super().__init__(embed_dim)
 
         assert all(dim == 0 for dim in observation_space.low)
-        assert observation_space.dtype == np.int
+        assert observation_space.dtype == int
 
         hidden_size = 32
         self._embedders = nn.ModuleList(

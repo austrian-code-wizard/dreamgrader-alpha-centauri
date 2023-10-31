@@ -431,7 +431,9 @@ class RecurrentDQNPolicy(DQNPolicy):
             epsilon = self._epsilon_schedule.step()
         self._max_q.append(torch.max(q_values).item())
         self._min_q.append(torch.min(q_values).item())
-        return epsilon_greedy(q_values.squeeze(), epsilon), hidden_state
+        if len(q_values.shape) > 2:
+            q_values = q_values.squeeze()
+        return epsilon_greedy(q_values, epsilon), hidden_state
 
 
 class ClassifierDQNPolicy(RecurrentDQNPolicy):

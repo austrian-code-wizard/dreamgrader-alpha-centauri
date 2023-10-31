@@ -1,16 +1,17 @@
 {
   "environment": {
-    "type": "fake-email-inbox-scroll-multiclass",
-    "max_steps": 4,
-    "use_back_action": false,
-    "data_dir": "/scr-ssd/moritzst/data_envs_scroll_2",
-    "use_screenshot_cache": true,
-    "use_doms": true,
-    "use_screenshots": false,
-    "num_demos": 2000,
-    "use_scroll_state": true,
-    "query_features": ["sender_name", "symbol", "index"],
-    "target_features": ["body_size", "subject_first_word", "body_last_word"]
+    "type": "webshop",
+    "vlm": "fuyu",
+    "quantize": "4b",
+    "max_steps": 3,
+    "num_train": 100000,
+    "num_test": 10000,
+    "num_items": 3,
+    "window_height": 540,
+    "window_width": 960,
+    "scroll_amount": 270,
+    "scroll_time": 100,
+    "num_actions": 5
   },
   "instruction_agent": {
     "type": "learned",
@@ -23,14 +24,14 @@
       "embedder": {
         "trajectory_embedder": {
           "penalty": 0.1,
-          "decoder_output_dim": 33
+          "decoder_output_dim": 3
         },
         "transition_embedder": {
           "reward_embed_dim": 32
         }
       },
       "buffer": {
-        "sequence_length": 7
+        "sequence_length": 4
       }
     },
     "update_freq": 4
@@ -51,7 +52,7 @@
       }
     },
     "buffer": {
-      "sequence_length": 7
+      "sequence_length": 4
     }
   }
 }

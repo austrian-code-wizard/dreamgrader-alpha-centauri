@@ -2,7 +2,7 @@ TASK_WIDTH = 156
 TASK_HEIGHT = 150
 TASK_WIDTH_OFFSET = 2
 TASK_HEIGHT_OFFSET = 52
-NUM_INSTANCES = 16
+NUM_INSTANCES = 1
 
 # Setting to 0 since we don't have expert trajectory for scroll env
 NUM_DEMOS = 0
