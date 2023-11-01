@@ -1,6 +1,7 @@
 import os
 os.environ["TRANSFORMERS_CACHE"] = "/iris/u/moritzst/.cache"
 
+import re
 import ast
 import csv
 import json
@@ -16,12 +17,47 @@ from PIL import Image
 from gym import spaces
 import gymnasium as gym
 from transformers import BitsAndBytesConfig
-from transformers import FuyuForCausalLM, AutoTokenizer, FuyuProcessor, FuyuImageProcessor
+from transformers import FuyuForCausalLM, AutoTokenizer, FuyuProcessor, FuyuImageProcessor, MarkupLMProcessor, MarkupLMModel
 
 import render
 import meta_exploration
 from envs.miniwob.constants import NUM_INSTANCES
 from web_agent_site.envs.web_agent_dream_env import WebAgentDreamEnv
+
+
+class WebAgentDreamEnvMarkupLM(WebAgentDreamEnv):
+    pretrained_path = "microsoft/markuplm-base"
+    EMBEDDING_SIZE = 768
+
+    model = None
+    processor = None
+
+    def __init__(self, *args, **kwargs):
+        if WebAgentDreamEnvMarkupLM.processor is None:
+            WebAgentDreamEnvMarkupLM.processor = MarkupLMProcessor.from_pretrained(WebAgentDreamEnvMarkupLM.pretrained_path)
+
+        if WebAgentDreamEnvMarkupLM.model is None:
+            WebAgentDreamEnvMarkupLM.model = MarkupLMModel.from_pretrained(WebAgentDreamEnvMarkupLM.pretrained_path)
+
+            # Set model to eval mode
+            WebAgentDreamEnvMarkupLM.model.eval()
+        super().__init__(*args, **kwargs)
+
+    @property
+    def state(self):
+        state = super().state
+        dom = state["html"]
+
+        # Replace between <div id="best-products" style="display: none;" class="text-center"> * </div>
+        dom = re.sub(r'<div id="best-products".*?</div>\n', "", dom, flags=re.DOTALL)
+
+        # Remove head
+        dom = re.sub(r'<head>.*?</head>\n', "", dom, flags=re.DOTALL)
+        encoding = self.processor(str(dom), return_tensors="pt")
+        with torch.no_grad():
+            outputs = self.model(**encoding)
+        output = outputs["last_hidden_state"][0]
+        return output, state["instruction_text"], state["best_products"]
 
 
 def scale_image(img: Image, desired_width = 1920, desired_height=1080):
@@ -39,6 +75,7 @@ def scale_image(img: Image, desired_width = 1920, desired_height=1080):
 
 class WebAgentDreamEnvFuyu(WebAgentDreamEnv):
     pretrained_path = "adept/fuyu-8b"
+    EMBEDDING_SIZE = 4096
 
     model = None
     processor = None
@@ -82,7 +119,7 @@ class WebAgentDreamEnvFuyu(WebAgentDreamEnv):
         with torch.no_grad():
             output = self.model(**model_inputs, output_hidden_states=True)
             output = output.hidden_states[-1][0]
-        print(f"Time to run model: {time.time() - start}")
+        # print(f"Time to run model: {time.time() - start}")
         return output, state["instruction_text"], state["best_products"]
 
 
@@ -138,6 +175,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     SCROLL_AMOUNT = None
     SCROLL_TIME = None
     NUM_ACTIONS = None
+    USE_SCREENSHOT = None
 
 
     def __init__(self, env_id, _):
@@ -146,15 +184,18 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         self._steps = 0
         
         # TODO: change back to original email inbox env once exp is done
-        env = WebAgentDreamEnvFuyu(quantize=self.QUANTIZE, window_height=self.WINDOW_HEIGHT, window_width=self.WINDOW_WIDTH, scroll_amount=self.SCROLL_AMOUNT, scroll_time=self.SCROLL_TIME)
+        if self.USE_SCREENSHOT:
+            self._env = WebAgentDreamEnvFuyu(quantize=self.QUANTIZE, window_height=self.WINDOW_HEIGHT, window_width=self.WINDOW_WIDTH, scroll_amount=self.SCROLL_AMOUNT, scroll_time=self.SCROLL_TIME) 
+        else:
+            self._env = WebAgentDreamEnvMarkupLM(window_height=self.WINDOW_HEIGHT, window_width=self.WINDOW_WIDTH, scroll_amount=self.SCROLL_AMOUNT, scroll_time=self.SCROLL_TIME)
+
         self.observation_space = gym.spaces.Dict({
-            "observation": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(self.WINDOW_HEIGHT, self.WINDOW_WIDTH)),
+            "observation": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(type(self._env).EMBEDDING_SIZE,)),
             "env_id": gym.spaces.Box(np.array([0]),
                 np.array([3]), # TODO: check if this actually matters
                 dtype=int)
         })
-        self._env = env
-        self._env.reset()
+        # self._env.reset() #TODO: this is done explicitly in training loop
         self.action_space = spaces.Discrete(self.NUM_ACTIONS)
         self.exploitation = False
 
@@ -174,6 +215,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.SCROLL_AMOUNT = config.get("scroll_amount", 180)
         cls.SCROLL_TIME = config.get("scroll_time", 150)
         cls.NUM_ACTIONS = config.get("num_actions", 4)
+        cls.USE_SCREENSHOT = config.get("use_screenshot", False)
 
 
     @classmethod
@@ -192,7 +234,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         assert len(action) == 1, "Only supporting 1 concurrent env with webshop at the moment"
         start = time.time()
         (state, _, __), reward, done, info = self._env.step(action[0])
-        print(f"Time to step: {time.time() - start}")
+        # print(f"Time to step: {time.time() - start}")
         self._steps += 1
         done = done if self._steps < type(self).MAX_STEPS else [True]*len(action)
         return [state], [reward], [done], [info]
@@ -202,7 +244,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         self._steps = 0
         start = time.time()
         (obs, question, best_products), _ = self._env.reset(seed=self._env_id[0])
-        print(f"Time to reset: {time.time() - start}")
+        # print(f"Time to reset: {time.time() - start}")
         self._questions = [question]
 
         # self._correct_answers = [[p["index"] for p in best_products]]

@@ -172,7 +172,7 @@ def _run_episode(env, policy, experience_observers=None, test=False,
                 start = time.time()
                 actions, next_hidden_state = policy.act(
                         state, hidden_state, test=test)
-                print(f"Time to run policy: {time.time() - start}")
+                # print(f"Time to run policy: {time.time() - start}")
                 if not exploitation:
                     next_hidden_state = [(h.reshape((1, *h.shape)), c.reshape(1, *c.shape)) for h, c in zip(next_hidden_state[0], next_hidden_state[1])]
                 action_computation_time += time.time() - action_comp_time_start
@@ -199,7 +199,7 @@ def _run_episode(env, policy, experience_observers=None, test=False,
 
         state = next_state
         hidden_state = next_hidden_state
-    print(f"Episode time: {time.time() - episode_start}")
+    # print(f"Episode time: {time.time() - episode_start}")
     return episodes, renders
 
 

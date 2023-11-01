@@ -1286,7 +1286,6 @@ class WebshopEmbedder(Embedder):
     nlayers = 1 #6  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
     nhead = 1  # number of heads in nn.MultiheadAttention
     dropout = 0.0  # dropout probability
-    raw_embed_dim = 4096
 
     SPECIAL_EMBED = 1
     PAD = 0
@@ -1294,10 +1293,11 @@ class WebshopEmbedder(Embedder):
     def __init__(self, observation_space, embed_dim=256):
         super().__init__(embed_dim)
 
-        self.special_embedding = nn.Embedding(2, self.raw_embed_dim)
-        encoder_layers = nn.TransformerEncoderLayer(type(self).raw_embed_dim, self.nhead, type(self).raw_embed_dim, self.dropout)
+        raw_embed_dim = observation_space.shape[0]
+        self.special_embedding = nn.Embedding(2, raw_embed_dim)
+        encoder_layers = nn.TransformerEncoderLayer(raw_embed_dim, self.nhead, raw_embed_dim, self.dropout)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
-        self.linear = nn.Linear(type(self).raw_embed_dim, embed_dim)
+        self.linear = nn.Linear(raw_embed_dim, embed_dim)
 
 
     def pad_and_combine(self, embeddings):
