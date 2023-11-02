@@ -1,3 +1,6 @@
+import os
+os.environ["TRANSFORMERS_CACHE"] = "/iris/u/moritzst/.cache"
+
 import abc
 import math
 import collections
@@ -9,6 +12,7 @@ from torch import distributions as td
 from torch.nn import functional as F
 from torchtext.data.utils import get_tokenizer
 from torchtext.vocab import build_vocab_from_iterator
+from transformers import MarkupLMProcessor, MarkupLMModel
 
 from envs import bounce
 from envs import grid
@@ -1280,74 +1284,91 @@ class MiniWobEmbedder(Embedder):
         return self.linear(multi_embedding[0,:,:])
 
 
-class WebshopEmbedder(Embedder):
-    # nlayers = 8
-    # nhead = 8
-    nlayers = 1 #6  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-    nhead = 1  # number of heads in nn.MultiheadAttention
-    dropout = 0.0  # dropout probability
+"""
+class WebAgentDreamEnvMarkupLM(WebAgentDreamEnv):
+    pretrained_path = "microsoft/markuplm-base"
+    EMBEDDING_SIZE = 768
 
-    SPECIAL_EMBED = 1
-    PAD = 0
+    model = None
+    processor = None
+
+    def __init__(self, *args, **kwargs):
+        if WebAgentDreamEnvMarkupLM.processor is None:
+            WebAgentDreamEnvMarkupLM.processor = MarkupLMProcessor.from_pretrained(WebAgentDreamEnvMarkupLM.pretrained_path)
+
+        if WebAgentDreamEnvMarkupLM.model is None:
+            WebAgentDreamEnvMarkupLM.model = MarkupLMModel.from_pretrained(WebAgentDreamEnvMarkupLM.pretrained_path)
+
+            # Set model to eval mode
+            WebAgentDreamEnvMarkupLM.model.eval()
+        super().__init__(*args, **kwargs)
+
+    @property
+    def state(self):
+        state = super().state
+        dom = state["html"]
+
+        # Replace between <div id="best-products" style="display: none;" class="text-center"> * </div>
+        dom = re.sub(r'<div id="best-products".*?</div>\n', "", dom, flags=re.DOTALL)
+
+        # Remove head
+        dom = re.sub(r'<head>.*?</head>\n', "", dom, flags=re.DOTALL)
+        encoding = self.processor(str(dom), return_tensors="pt")
+        with torch.no_grad():
+            outputs = self.model(**encoding)
+        output = outputs["last_hidden_state"][0]
+        return output, state["instruction_text"], state["best_products"]
+"""
+
+class WebshopEmbedder(Embedder):
+    pretrained_path = "microsoft/markuplm-base"
+    lm_embedding_size = 768
+
+    model = None
+    processor = None
     
     def __init__(self, observation_space, embed_dim=256):
         super().__init__(embed_dim)
 
-        raw_embed_dim = observation_space.shape[0]
-        self.special_embedding = nn.Embedding(2, raw_embed_dim)
-        encoder_layers = nn.TransformerEncoderLayer(raw_embed_dim, self.nhead, raw_embed_dim, self.dropout)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
-        self.linear = nn.Linear(raw_embed_dim, embed_dim)
+        if WebshopEmbedder.processor is None:
+            WebshopEmbedder.processor = MarkupLMProcessor.from_pretrained(WebshopEmbedder.pretrained_path)
+
+        if WebshopEmbedder.model is None:
+            WebshopEmbedder.model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
+
+            # Set model to eval mode
+            WebshopEmbedder.model.eval()
+
+        self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, WebshopEmbedder.lm_embedding_size)
+        self.fc2 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
 
 
-    def pad_and_combine(self, embeddings):
-        # 1. Identify the maximum sequence length
-        max_len = max(embedding.size(0) for embedding in embeddings)
+    def _clean_dom(self, dom):
+        dom = re.sub(r'<div id="best-products".*?</div>\n', "", dom, flags=re.DOTALL)
 
-        # List to store padded embeddings
-        padded_embeddings = []
-        padding_masks = []
-
-        # 2. Pad each embedding to the max_len
-        for embedding in embeddings:
-            seq_len = embedding.size(0)
-            padded_embedding = torch.nn.functional.pad(embedding, (0, 0, 0, max_len - seq_len))
-            padded_embeddings.append(padded_embedding)
-            
-            # Construct padding mask for this embedding
-            mask = torch.zeros(seq_len, dtype=torch.bool)
-            mask = torch.nn.functional.pad(mask, (0, max_len - seq_len), value=True)
-            padding_masks.append(mask)
-
-        # 3. Combine embeddings into one batched tensor
-        batched_embeddings = torch.stack(padded_embeddings)
-
-        # 4. Combine masks into one batched tensor
-        batched_masks = torch.stack(padding_masks)
-
-        return batched_embeddings, batched_masks
+        # Remove head
+        return re.sub(r'<head>.*?</head>\n', "", dom, flags=re.DOTALL)
 
 
     def forward(self, obs):
 
         # Turn into B x S x D tensor
-        if isinstance(obs, list):
-            obs, mask = self.pad_and_combine(obs)
-            mask = mask.to(device)
+        if isinstance(obs, str):
+            obs = [obs]
+        elif isinstance(obs, list):
+            pass
         else:
-            obs = obs.unsqueeze(0)
-            mask = torch.zeros((1, obs.shape[1]), dtype=torch.bool).to(device)
+            raise ValueError(f"Expected str or list, got {type(obs)}")
         
-        B, S, D = obs.shape
+        obs = [self._clean_dom(o) for o in obs]
+        
+        encoding = self.processor(obs, return_tensors="pt")
+        with torch.no_grad():
+            outputs = WebshopEmbedder.model(**encoding)
 
-        special_embedding_indices = torch.ones((B, 1), dtype=torch.int32)
-        special_embeddings = self.special_embedding(special_embedding_indices)
+        outputs = outputs["pooler_output"]
 
-        obs = torch.cat([special_embeddings, obs], dim=1)
-        mask = torch.cat([torch.zeros((B, 1), dtype=torch.bool).to(device), mask], dim=1)
-
-        obs = self.transformer_encoder(obs.permute(1, 0, 2), src_key_padding_mask=mask)
-        return self.linear(obs[0,:,:])
+        return self.fc2(F.relu(self.fc1(outputs)))
 
 
 class SimpleGridStateEmbedder(Embedder):

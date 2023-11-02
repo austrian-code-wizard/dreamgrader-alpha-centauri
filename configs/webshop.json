@@ -1,8 +1,6 @@
 {
   "environment": {
     "type": "webshop",
-    "vlm": "fuyu",
-    "quantize": "4b",
     "max_steps": 3,
     "num_train": 100000,
     "num_test": 10000,
@@ -11,7 +9,7 @@
     "window_width": 960,
     "scroll_amount": 270,
     "scroll_time": 100,
-    "num_actions": 5,
+    "num_actions": 6,
     "use_screenshot": false
   },
   "instruction_agent": {
