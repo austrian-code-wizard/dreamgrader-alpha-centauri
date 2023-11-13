@@ -27,6 +27,7 @@ import time
 from envs import webshop
 from envs.miniwob.constants import NUM_INSTANCES, NUM_DEMOS
 
+PRINT_TIMES = False
 
 collected_demos = 0
 
@@ -87,6 +88,12 @@ def log_buffer_sizes():
 def run_episode(env, policy, experience_observers=None, test=False,
                 exploitation=False):
     global buffers
+
+    if NUM_INSTANCES == 1:
+        e, r = _run_episode(
+            env, policy, experience_observers=experience_observers, test=test,
+            exploitation=exploitation)
+        return e[0], r[0]
     
     episode_buffer = buffers["episodes"]["test" if test else "train"]["exploitation" if exploitation else "exploration"]
     render_buffer = buffers["renders"]["test" if test else "train"]["exploitation" if exploitation else "exploration"]
@@ -155,11 +162,15 @@ def _run_episode(env, policy, experience_observers=None, test=False,
     hidden_state = None
     action_computation_time = 0
     emv_computation_time = 0
+    render_computation_time = 0
     done = [False] * NUM_INSTANCES
     if exploitation:
         state = [state[0]]
         done = [done[0]]
         renders = [renders[0]]
+
+    # Timing variables:
+
     while not all(done):
         # Remove grads to decrease memory usage
         next_hidden_state = [None] * NUM_INSTANCES
@@ -169,10 +180,8 @@ def _run_episode(env, policy, experience_observers=None, test=False,
                 # Are we accidentally batching here? Could make smaller?
                 # actions, next_hidden_state = policy.act(
                 #         state, hidden_state if hidden_state is not None else [None] * NUM_INSTANCES, test=test)
-                start = time.time()
                 actions, next_hidden_state = policy.act(
                         state, hidden_state, test=test)
-                # print(f"Time to run policy: {time.time() - start}")
                 if not exploitation:
                     next_hidden_state = [(h.reshape((1, *h.shape)), c.reshape(1, *c.shape)) for h, c in zip(next_hidden_state[0], next_hidden_state[1])]
                 action_computation_time += time.time() - action_comp_time_start
@@ -186,6 +195,8 @@ def _run_episode(env, policy, experience_observers=None, test=False,
         decoder_distribution = None
         if exploitation:
             decoder_distribution = next_hidden_state
+        
+        render_comp_time_start = time.time()
         for i, r in enumerate(env.render()):
             if not prev_done[i]:
                 renders[i].append(
@@ -196,10 +207,15 @@ def _run_episode(env, policy, experience_observers=None, test=False,
                     next_hidden_state[i]))
             if exploitation:
                 break
+        render_computation_time += time.time() - render_comp_time_start
 
         state = next_state
         hidden_state = next_hidden_state
-    # print(f"Episode time: {time.time() - episode_start}")
+    if PRINT_TIMES:
+        print(f"Action computation time: {action_computation_time}")
+        print(f"Env computation time: {emv_computation_time}")
+        print(f"Render computation time: {render_computation_time}")
+    #print(f"Episode time: {time.time() - episode_start}")
     return episodes, renders
 
 
@@ -403,7 +419,7 @@ def main():
             test_exploration_lengths = []
             trajectory_embedder.use_ids(False)
             clear_buffers()
-            for test_index in tqdm.tqdm(range(480)):
+            for test_index in tqdm.tqdm(range(128)):
                 exploration_env = create_env(test_index // NUM_INSTANCES, test=True)
                 exploration_episode, exploration_render = run_episode(
                         env_class.instruction_wrapper()(
@@ -477,7 +493,7 @@ def main():
             os.makedirs(visualize_dir, exist_ok=True)
             clear_buffers()
             train_no_eps_rewards = []
-            for train_index in tqdm.tqdm(range(128)):
+            for train_index in tqdm.tqdm(range(64)):
                 exploration_env = create_env(train_index // NUM_INSTANCES)
                 # Test flags here only refer to making agent act with test flag and
                 # not test split environments
@@ -513,21 +529,19 @@ def main():
         import time
         start = time.time()
         exploration_env = create_env(step // NUM_INSTANCES, iter=step)
-        # Env creation {time.time()  -  start}")
         start = time.time()
         exploration_episode, _ = run_episode(
                 # Exploration episode gets ignored
                 env_class.instruction_wrapper()(
                         exploration_env, [], seed=max(0, step - 1)),
                 exploration_agent)
-        # print(f"Expl ep {time.time() - start}")
         start = time.time()
         # Interleave this
         for exp in relabel.TrajectoryExperience.episode_to_device(
                     exploration_episode,
                     exploration_agent.buffer_on_cpu):
+            start2 = time.time()
             exploration_agent.update(exp)
-        # print(f"expl update {time.time() - start}")
         start = time.time()
 
         exploration_steps += len(exploration_episode)
@@ -537,7 +551,6 @@ def main():
         instruction_env = env_class.instruction_wrapper()(
                 exploration_env, exploration_episode, seed=step + 1,
                 exploitation=True)
-        # print(f"Creating instruction env {time.time() - start}")
         start = time.time()
 
 
@@ -551,17 +564,26 @@ def main():
                 exploitation=True)
         instruction_steps += len(episode)
         trajectory_embedder.use_ids(True)
-        # print(f"Instr ep {time.time() - start}")
 
         rewards.append(sum(exp.reward for exp in episode))
         bug_is_present.append(exploration_env.env_id)
 
         # Log reward for exploration agent
+        start = time.time()
         exploration_rewards, distances = trajectory_embedder.label_rewards(
                 [exploration_episode])
         exploration_rewards = exploration_rewards[0]
         distances = distances[0]
         relabel_rewards.append(exploration_rewards.sum().item())
+
+        if PRINT_TIMES:
+            print(f"Env creation {time.time()  -  start}")
+            print(f"Expl ep {time.time() - start}")
+            print(f"expl update {time.time() - start}")
+            print(f"Creating instruction env {time.time() - start}")
+            print(f"Instr ep {time.time() - start}")
+            print(f"Label rewards {time.time() - start}")
+            print("\n-\n")
 
         if step % 100 == 0:
             path = os.path.join(text_dir, "{}.txt".format(step))

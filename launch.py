@@ -28,7 +28,10 @@ echo "SLURMTMPDIR="$SLURMTMPDIR
 echo "working directory = "$SLURM_SUBMIT_DIR
 
 # Load environment
-source /iris/u/moritzst/miniwob_venv/bin/activate
+source /iris/u/moritzst/miniconda3/bin/activate
+conda activate webshop
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/iris/u/moritzst/miniconda3/lib
 
 free -h
 nvidia-smi
@@ -37,10 +40,10 @@ python3 --version
 
 # Print command
 echo "Running the following command:"
-echo "python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob.json -s {seed} -p experiments/exp-102/checkpoints/980000"
+echo "python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/webshop.json -s {seed}"
 
 # Run command
-python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/fake_scroll_miniwob.json -s {seed} -p experiments/exp-102/checkpoints/980000
+python3 main.py {exp_name} -b instruction_agent.policy.type=\\"classifier\\" -c configs/default.json -c configs/webshop.json -s {seed}
 
 # Done
 echo "Done"
@@ -63,6 +66,6 @@ with open(TMP, "w") as f:
         exp_name=f"{args.name}",
         seed=args.seed))
 
-cmd = "sbatch --account=iris -p {partition} --time 300:00:00 --job-name=dream-miniwob-{exp_name} --nodelist=iris1 --output=sbatch/{exp_name}.txt {tmp}".format(partition=partition, exp_name=args.name, tmp=TMP)
+cmd = "sbatch --account=iris -p {partition} --time 300:00:00 --job-name=dream-miniwob-{exp_name} --nodelist=iris3 --output=sbatch/{exp_name}.txt {tmp}".format(partition=partition, exp_name=args.name, tmp=TMP)
 subprocess.run(cmd, check=True, shell=True)
 time.sleep(2)

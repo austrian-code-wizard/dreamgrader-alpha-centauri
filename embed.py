@@ -3,6 +3,7 @@ os.environ["TRANSFORMERS_CACHE"] = "/iris/u/moritzst/.cache"
 
 import abc
 import math
+import time
 import collections
 import numpy as np
 import torch
@@ -1284,50 +1285,21 @@ class MiniWobEmbedder(Embedder):
         return self.linear(multi_embedding[0,:,:])
 
 
-"""
-class WebAgentDreamEnvMarkupLM(WebAgentDreamEnv):
-    pretrained_path = "microsoft/markuplm-base"
-    EMBEDDING_SIZE = 768
-
-    model = None
-    processor = None
-
-    def __init__(self, *args, **kwargs):
-        if WebAgentDreamEnvMarkupLM.processor is None:
-            WebAgentDreamEnvMarkupLM.processor = MarkupLMProcessor.from_pretrained(WebAgentDreamEnvMarkupLM.pretrained_path)
-
-        if WebAgentDreamEnvMarkupLM.model is None:
-            WebAgentDreamEnvMarkupLM.model = MarkupLMModel.from_pretrained(WebAgentDreamEnvMarkupLM.pretrained_path)
-
-            # Set model to eval mode
-            WebAgentDreamEnvMarkupLM.model.eval()
-        super().__init__(*args, **kwargs)
-
-    @property
-    def state(self):
-        state = super().state
-        dom = state["html"]
-
-        # Replace between <div id="best-products" style="display: none;" class="text-center"> * </div>
-        dom = re.sub(r'<div id="best-products".*?</div>\n', "", dom, flags=re.DOTALL)
-
-        # Remove head
-        dom = re.sub(r'<head>.*?</head>\n', "", dom, flags=re.DOTALL)
-        encoding = self.processor(str(dom), return_tensors="pt")
-        with torch.no_grad():
-            outputs = self.model(**encoding)
-        output = outputs["last_hidden_state"][0]
-        return output, state["instruction_text"], state["best_products"]
-"""
-
 class WebshopEmbedder(Embedder):
     pretrained_path = "microsoft/markuplm-base"
     lm_embedding_size = 768
+    nlayers = 1 #6  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
+    nhead = 4  # number of heads in nn.MultiheadAttention
+    dropout = 0.0  # dropout probability
 
     model = None
     processor = None
+    use_pooled = False
+
+    EMBEDDING_CACHE = {}
     
     def __init__(self, observation_space, embed_dim=256):
+        print(f"Initializing with embed dim {embed_dim}")
         super().__init__(embed_dim)
 
         if WebshopEmbedder.processor is None:
@@ -1339,12 +1311,21 @@ class WebshopEmbedder(Embedder):
             # Set model to eval mode
             WebshopEmbedder.model.eval()
 
+        if not WebshopEmbedder.use_pooled:
+            self.cls_embedding = nn.Embedding(1, WebshopEmbedder.lm_embedding_size)
+            encoder_layers = nn.TransformerEncoderLayer(type(self).lm_embedding_size, self.nhead, type(self).lm_embedding_size, self.dropout)
+            self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
+
         self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, WebshopEmbedder.lm_embedding_size)
         self.fc2 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
 
 
     def _clean_dom(self, dom):
+        # Remove best product label
         dom = re.sub(r'<div id="best-products".*?</div>\n', "", dom, flags=re.DOTALL)
+
+        # Remove instruction text
+        dom = re.sub(r'<div id="instruction-text".*?</div>\n', "", dom, flags=re.DOTALL)
 
         # Remove head
         return re.sub(r'<head>.*?</head>\n', "", dom, flags=re.DOTALL)
@@ -1353,22 +1334,54 @@ class WebshopEmbedder(Embedder):
     def forward(self, obs):
 
         # Turn into B x S x D tensor
-        if isinstance(obs, str):
+        if not isinstance(obs, list):
             obs = [obs]
-        elif isinstance(obs, list):
-            pass
-        else:
-            raise ValueError(f"Expected str or list, got {type(obs)}")
+
+        questions = [o.question for o in obs]
+        obs = [o.observation for o in obs]
         
         obs = [self._clean_dom(o) for o in obs]
+
+        # Separate cached / not cached
+        not_cached = [(o, q) for o, q in zip(obs, questions) if o not in WebshopEmbedder.EMBEDDING_CACHE]
+        not_cached_obs = [o for o, _ in not_cached]
+        not_cached_questions = [q for _, q in not_cached]
         
-        encoding = self.processor(obs, return_tensors="pt")
-        with torch.no_grad():
-            outputs = WebshopEmbedder.model(**encoding)
+        if len(not_cached_obs) > 0:
+            encoding = self.processor(html_strings=not_cached_obs, questions=not_cached_questions, padding=True, max_length=512, truncation=True, return_tensors="pt")
+            with torch.no_grad():
+                outputs = WebshopEmbedder.model(**encoding)
 
-        outputs = outputs["pooler_output"]
+            if WebshopEmbedder.use_pooled:
+                outputs = outputs["pooler_output"]
+            else:
+                outputs = outputs["last_hidden_state"]
+            outputs = [o.unsqueeze(0) for o in outputs]
 
-        return self.fc2(F.relu(self.fc1(outputs)))
+            # Cache outputs
+            for o, output in zip(not_cached_obs, outputs):
+                WebshopEmbedder.EMBEDDING_CACHE[o] = output
+
+        # Get cached outputs
+        outputs = [WebshopEmbedder.EMBEDDING_CACHE[o] for o in obs]
+
+        if not WebshopEmbedder.use_pooled:
+            outputs = nn.utils.rnn.pad_sequence(outputs, batch_first=True, padding_value=self.processor.tokenizer.pad_tag_id).to(device)
+            # Generate padding mask
+            src_pad_mask = (obs == self.processor.tokenizer.pad_tag_id).to(device)
+            # Add cls token
+            cls_embedding = self.cls_embedding(torch.zeros((outputs.shape[0], 1), dtype=torch.long).to(device))
+            outputs = torch.cat([cls_embedding, outputs], dim=1).permute(1, 0, 2)
+
+            # Add zeros to pad mask
+            src_pad_mask = torch.cat([torch.zeros((outputs.shape[0], 1), dtype=torch.bool).to(device), src_pad_mask], dim=1)
+            outputs = self.transformer_encoder(outputs, key_padding_mask=src_pad_mask).permute(1, 0, 2)
+            outputs = outputs[:,0,:]
+        else:
+            outputs = torch.cat(outputs, dim=0)
+
+        outputs = self.fc2(F.relu(self.fc1(outputs)))
+        return outputs
 
 
 class SimpleGridStateEmbedder(Embedder):

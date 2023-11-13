@@ -10,6 +10,7 @@ import render
 import meta_exploration
 from envs.miniwob.constants import NUM_INSTANCES
 from web_agent_site.envs.web_agent_dream_env import WebAgentDreamEnv
+from web_agent_site.envs.web_agent_dream_env_dom import WebAgentDreamDOMEnv
 
 
 class InstructionWrapper(meta_exploration.InstructionWrapper):
@@ -64,13 +65,15 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     SCROLL_AMOUNT = None
     SCROLL_TIME = None
     NUM_ACTIONS = None
+    ITER = None
+    NUM_DEMOS = None
 
     def __init__(self, env_id, _):
         assert NUM_INSTANCES == 1, "Only supporting 1 concurrent env with webshop at the moment"
         super().__init__(env_id, WebshopObservation)
         self._steps = 0
         
-        self._env = WebAgentDreamEnv(window_height=self.WINDOW_HEIGHT, window_width=self.WINDOW_WIDTH, scroll_amount=self.SCROLL_AMOUNT, scroll_time=self.SCROLL_TIME)
+        self._env = WebAgentDreamDOMEnv(window_height=self.WINDOW_HEIGHT, window_width=self.WINDOW_WIDTH, scroll_amount=self.SCROLL_AMOUNT, scroll_time=self.SCROLL_TIME)
 
         self.observation_space = gym.spaces.Dict({
             "observation": gym.spaces.Text(min_length=0, max_length=100000, charset=ascii_letters + digits + punctuation),
@@ -99,6 +102,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.SCROLL_TIME = config.get("scroll_time", 150)
         cls.NUM_ACTIONS = config.get("num_actions", 4)
         cls.USE_SCREENSHOT = config.get("use_screenshot", False)
+        cls.NUM_DEMOS = config.get("num_demos", 0)
 
 
     @classmethod
@@ -113,28 +117,50 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     def questions(self):
         return self._questions
 
+    @classmethod
+    def set_iter(cls, iter):
+        cls.ITER = iter
+
+    def is_demo(self):
+        return True if self.ITER is not None and self.ITER < self.NUM_DEMOS else False
+
+    def get_demo(self):
+        if self.exploitation:
+            return torch.tensor(self.env_id).to("cpu") # Return correct answer
+        elif self._steps == 0:
+            return [1] # Search items on initial step
+        return [0] # End episode on results page
+
     def _step(self, action):
+        # print(f"Action: {action}")
         assert len(action) == 1, "Only supporting 1 concurrent env with webshop at the moment"
         start = time.time()
-        (state, _, __), reward, done, info = self._env.step(action[0])
+        state, reward, done, info = self._env.step(action[0])
         # print(f"Time to step: {time.time() - start}")
         self._steps += 1
-        done = done if self._steps < type(self).MAX_STEPS else [True]*len(action)
+        done = done if self._steps < type(self).MAX_STEPS else True
         state = state["html"]
-        return [state], [reward], [done], [info]
+        return [{
+            "observation": state,
+            "question": self._questions[0]
+        }], [reward], [done], [info]
 
     def _reset(self):
-        # old hack but messes up evaluation of correct answer
+        if self.exploitation:
+            return [{"observation": "", "question": ""}]
         self._steps = 0
         start = time.time()
-        (state, question, best_products), _ = self._env.reset(seed=self._env_id[0])
-        state = state["html"]
+        state, _ = self._env.reset(seed=self._env_id[0])
         # print(f"Time to reset: {time.time() - start}")
-        self._questions = [question]
+        self._questions = [state["instruction_text"]]
 
         # self._correct_answers = [[p["index"] for p in best_products]]
-        self._correct_answers = [best_products[0]["index"]]
-        return [state]
+        self._correct_answers = [state["best_products"][0]["index"]]
+        state = state["html"]
+        return [{
+            "observation": state,
+            "question": self._questions[0]
+        }]
 
     def render(self, mode=None):
         imgs = []
@@ -152,11 +178,13 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
 
     def set_underlying_env_id(self, id):
         self._env_id = id
+        self._reset()
 
 
 class WebshopObservation:
     def __init__(self, observation):
-        self._observation = observation
+        self._observation = observation["observation"]
+        self._question = observation["question"]
 
     @property
     def is_cuda(self):
@@ -165,6 +193,10 @@ class WebshopObservation:
     @property
     def observation(self):
         return self._observation
+
+    @property
+    def question(self):
+        return self._question
 
     def cpu(self):
         # Hacky way to accomodate cpu/cuda switching in observation buffer
