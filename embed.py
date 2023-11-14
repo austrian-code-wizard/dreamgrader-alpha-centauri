@@ -1356,6 +1356,8 @@ class WebshopEmbedder(Embedder):
                 outputs = outputs["pooler_output"]
             else:
                 outputs = outputs["last_hidden_state"]
+            
+            # List of 1 x S x D tensors or 1 x D tensors (pooled)
             outputs = [o.unsqueeze(0) for o in outputs]
 
             # Cache outputs
@@ -1366,16 +1368,24 @@ class WebshopEmbedder(Embedder):
         outputs = [WebshopEmbedder.EMBEDDING_CACHE[o] for o in obs]
 
         if not WebshopEmbedder.use_pooled:
-            outputs = nn.utils.rnn.pad_sequence(outputs, batch_first=True, padding_value=self.processor.tokenizer.pad_tag_id).to(device)
-            # Generate padding mask
-            src_pad_mask = (obs == self.processor.tokenizer.pad_tag_id).to(device)
+            max_len = max([o.shape[1] for o in outputs])
+            
+            # compute mask of shape B x S
+            pre_mask = [torch.zeros((o.shape[0], o.shape[1]), dtype=torch.bool).to(device) for o in outputs]
+            pre_mask = [F.pad(o, (0, max_len - o.shape[1]), "constant", 1) for o in pre_mask]
+            src_pad_mask = torch.cat(pre_mask, dim=0)
+
+            # Now pad all sequences to max length
+            outputs = [F.pad(o, (0, 0, 0, max_len - o.shape[1]), "constant", 0) for o in outputs]
+            # Outputs is now B x S x D
+            outputs = torch.cat(outputs, dim=0)
             # Add cls token
             cls_embedding = self.cls_embedding(torch.zeros((outputs.shape[0], 1), dtype=torch.long).to(device))
             outputs = torch.cat([cls_embedding, outputs], dim=1).permute(1, 0, 2)
 
             # Add zeros to pad mask
-            src_pad_mask = torch.cat([torch.zeros((outputs.shape[0], 1), dtype=torch.bool).to(device), src_pad_mask], dim=1)
-            outputs = self.transformer_encoder(outputs, key_padding_mask=src_pad_mask).permute(1, 0, 2)
+            src_pad_mask = torch.cat([torch.zeros((outputs.shape[1], 1), dtype=torch.bool).to(device), src_pad_mask], dim=1)
+            outputs = self.transformer_encoder(outputs, src_key_padding_mask=src_pad_mask).permute(1, 0, 2)
             outputs = outputs[:,0,:]
         else:
             outputs = torch.cat(outputs, dim=0)
