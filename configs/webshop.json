@@ -59,7 +59,7 @@
       "epsilon_schedule": {
         "begin": 1.0,
         "end": 0.05,
-        "total_steps": 80000
+        "total_steps": 16000
       },
       "embedder": {
         "experience_embedder": {
@@ -75,7 +75,7 @@
     },
     "buffer": {
       "sequence_length": 4,
-      "max_buffer_size": 40000
+      "max_buffer_size": 16000
     },
     "min_buffer_size": 4000,
     "learning_rate": 0.0001,
