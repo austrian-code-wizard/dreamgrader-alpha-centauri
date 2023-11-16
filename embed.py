@@ -124,7 +124,7 @@ class TransitionEmbedder(Embedder):
     def from_config(cls, config, env):
         state_embedder = get_state_embedder(env)(
                 env.observation_space["observation"],
-                config.get("experience_embedder").get("state_embed_dim"))
+                config.get("experience_embedder").get("state_embed_dim"), config.get("experience_embedder").get("state_embed_config"))
         action_embedder = FixedVocabEmbedder(
                 env.action_space.n,
                 config.get("experience_embedder").get("action_embedder").get("embed_dim"))
@@ -373,7 +373,7 @@ class InstructionPolicyEmbedder(Embedder):
         """
         obs_embedder = get_state_embedder(env)(
                 env.observation_space["observation"],
-                config.get("obs_embedder").get("embed_dim"))
+                config.get("obs_embedder").get("embed_dim"), config.get("obs_embedder").get("state_embed_config"))
         # Use SimpleGridEmbeder since these are just discrete vars
         instruction_embedder = SimpleGridStateEmbedder(
                 env.observation_space["instructions"],
@@ -387,7 +387,7 @@ class InstructionPolicyEmbedder(Embedder):
         transition_config = config.get("transition_embedder")
         state_embedder = get_state_embedder(env)(
                 env.observation_space["observation"],
-                transition_config.get("state_embed_dim"))
+                transition_config.get("state_embed_dim"), transition_config.get("state_embed_config"))
         # This needs to cover embedding of the exploration time env...
         action_embedder = FixedVocabEmbedder(
                 env.unwrapped.action_space.n, transition_config.get("action_embed_dim"))
@@ -490,7 +490,7 @@ class RecurrentAndTaskIDEmbedder(Embedder):
         state_embed_config = config.get("state_embedder")
         state_embedder = get_state_embedder(env)(
             env.observation_space["observation"],
-            state_embed_config.get("embed_dim"))
+            state_embed_config.get("embed_dim"), state_embed_config.get("state_embed_config"))
         instruction_embedder = SimpleGridStateEmbedder(
             env.observation_space["instructions"],
             state_embed_config.get("embed_dim"))
@@ -665,7 +665,7 @@ class VariBADEmbedder(Embedder):
         state_embed_config = config.get("state_embedder")
         state_embedder = get_state_embedder(env)(
             env.observation_space["observation"],
-            state_embed_config.get("embed_dim"))
+            state_embed_config.get("embed_dim"), state_embed_config.get("state_embed_config"))
         instruction_embedder = SimpleGridStateEmbedder(
             env.observation_space["instructions"],
             state_embed_config.get("embed_dim"))
@@ -752,7 +752,7 @@ class RecurrentStateEmbedder(Embedder):
         experience_embed_config = config.get("experience_embedder")
         state_embedder = get_state_embedder(env)(
                 env.observation_space["observation"],
-                experience_embed_config.get("state_embed_dim"))
+                experience_embed_config.get("state_embed_dim"), experience_embed_config.get("state_embed_config"))
         action_embedder = FixedVocabEmbedder(
                 env.action_space.n + 1, experience_embed_config.get("action_embed_dim"))
         instruction_embedder = None
@@ -1293,14 +1293,18 @@ class WebshopEmbedder(Embedder):
 
     model = None
     processor = None
-    use_pooled = True
-    use_buffer = True
 
     EMBEDDING_CACHE = {}
     
-    def __init__(self, observation_space, embed_dim=256):
+    def __init__(self, observation_space, embed_dim=256, config={}):
         print(f"Initializing with embed dim {embed_dim}")
         super().__init__(embed_dim)
+
+        self.use_pooled = config.get("use_pooled", True)
+        self.use_buffer = config.get("use_buffer", True)
+
+        print(f"Using pooled: {self.use_pooled}")
+        print(f"Using buffer: {self.use_buffer}")
 
         if WebshopEmbedder.processor is None:
             WebshopEmbedder.processor = MarkupLMProcessor.from_pretrained(WebshopEmbedder.pretrained_path)
@@ -1311,7 +1315,7 @@ class WebshopEmbedder(Embedder):
             # Set model to eval mode
             WebshopEmbedder.model.eval()
 
-        if not WebshopEmbedder.use_pooled:
+        if not self.use_pooled:
             self.cls_embedding = nn.Embedding(2, WebshopEmbedder.lm_embedding_size)
             encoder_layers = nn.TransformerEncoderLayer(type(self).lm_embedding_size, self.nhead, type(self).lm_embedding_size, self.dropout)
             self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
@@ -1359,7 +1363,7 @@ class WebshopEmbedder(Embedder):
             with torch.no_grad():
                 outputs = WebshopEmbedder.model(**encoding)
 
-            if WebshopEmbedder.use_pooled:
+            if self.use_pooled:
                 outputs = outputs["pooler_output"]
             else:
                 outputs = outputs["last_hidden_state"]
@@ -1376,7 +1380,7 @@ class WebshopEmbedder(Embedder):
         if self.use_buffer:
             outputs = [WebshopEmbedder.EMBEDDING_CACHE[q+o] for o, q in zip(obs, questions)]
 
-        if not WebshopEmbedder.use_pooled:
+        if not self.use_pooled:
             max_len = max([o.shape[1] for o in outputs])
             
             # compute mask of shape B x S

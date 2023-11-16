@@ -23,7 +23,11 @@
       },
       "embedder": {
         "obs_embedder": {
-          "embed_dim": 64
+          "embed_dim": 64,
+          "state_embed_config": {
+            "use_buffer": false,
+            "use_pool": false
+          }
         },
         "trajectory_embedder": {
           "penalty": 0.1,
@@ -31,7 +35,11 @@
         },
         "transition_embedder": {
           "reward_embed_dim": 32,
-          "state_embed_dim": 64
+          "state_embed_dim": 64,
+          "state_embed_config": {
+            "use_buffer": false,
+            "use_pool": false
+          }
         }
       }
     },
@@ -57,7 +65,11 @@
         "experience_embedder": {
           "state_embed_dim": 64,
           "action_embed_dim": 16,
-          "embed_dim": 64
+          "embed_dim": 64,
+          "state_embed_config": {
+            "use_buffer": false,
+            "use_pool": false
+          }
         }
       }
     },

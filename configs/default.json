@@ -12,7 +12,11 @@
       "embedder": {
         "type": "instruction",
         "obs_embedder": {
-          "embed_dim": 64
+          "embed_dim": 64,
+          "state_embed_config": {
+            "use_pooled": false,
+            "use_buffer": false
+          }
         },
         "instruction_embedder": {
           "embed_dim": 64
@@ -20,7 +24,11 @@
         "transition_embedder": {
           "state_embed_dim": 64,
           "action_embed_dim": 32,
-          "embed_dim": 64
+          "embed_dim": 64,
+          "state_embed_config": {
+            "use_pooled": false,
+            "use_buffer": false
+          }
         },
         "trajectory_embedder": {
           "type": "ours",
@@ -59,7 +67,11 @@
         "experience_embedder": {
           "state_embed_dim": 64,
           "action_embed_dim": 16,
-          "embed_dim": 64
+          "embed_dim": 64,
+          "state_embed_config": {
+            "use_pooled": false,
+            "use_buffer": false
+          }
         },
         "embed_dim": 64
       },
