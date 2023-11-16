@@ -1,5 +1,4 @@
 import os
-# os.environ["TRANSFORMERS_CACHE"] = "/iris/u/moritzst/.cache"
 
 import abc
 import math
@@ -1294,7 +1293,7 @@ class WebshopEmbedder(Embedder):
 
     model = None
     processor = None
-    use_pooled = False
+    use_pooled = True
 
     EMBEDDING_CACHE = {}
     
@@ -1316,7 +1315,11 @@ class WebshopEmbedder(Embedder):
             encoder_layers = nn.TransformerEncoderLayer(type(self).lm_embedding_size, self.nhead, type(self).lm_embedding_size, self.dropout)
             self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
 
-        self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
+            self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
+        else:
+            self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, WebshopEmbedder.lm_embedding_size)
+            self.fc2 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
+            self.fc3 = nn.Linear(embed_dim, embed_dim)
 
 
     def _clean_dom(self, dom):
@@ -1391,10 +1394,13 @@ class WebshopEmbedder(Embedder):
             src_pad_mask = torch.cat([torch.zeros((outputs.shape[1], 1), dtype=torch.bool).to(device), src_pad_mask], dim=1)
             outputs = self.transformer_encoder(outputs, src_key_padding_mask=src_pad_mask).permute(1, 0, 2)
             outputs = outputs[:,0,:]
+            outputs = F.relu(self.fc1(outputs))
         else:
             outputs = torch.cat(outputs, dim=0)
-
-        return F.relu(self.fc1(outputs))
+            outputs = F.relu(self.fc1(outputs))
+            outputs = F.relu(self.fc2(outputs))
+            outputs = F.relu(self.fc3(outputs))
+        return outputs
 
 
     def forward_old(self, obs):

@@ -8,7 +8,7 @@ script = """\
 #SBATCH --time=300:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=80G
+#SBATCH --mem=128G
 
 # only use the following on partition with GPUs
 #SBATCH --gres=gpu:1
@@ -32,6 +32,7 @@ source /iris/u/moritzst/miniconda3/bin/activate
 conda activate webshop
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/iris/u/moritzst/miniconda3/lib
+export TRANSFORMERS_CACHE="/iris/u/moritzst/.cache"
 
 free -h
 nvidia-smi

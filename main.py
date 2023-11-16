@@ -418,7 +418,7 @@ def main():
             test_exploration_lengths = []
             trajectory_embedder.use_ids(False)
             clear_buffers()
-            for test_index in tqdm.tqdm(range(4)):
+            for test_index in tqdm.tqdm(range(256)):
                 exploration_env = create_env(test_index // NUM_INSTANCES, test=True)
                 exploration_episode, exploration_render = run_episode(
                         env_class.instruction_wrapper()(
@@ -492,7 +492,7 @@ def main():
             os.makedirs(visualize_dir, exist_ok=True)
             clear_buffers()
             train_no_eps_rewards = []
-            for train_index in tqdm.tqdm(range(4)):
+            for train_index in tqdm.tqdm(range(64)):
                 exploration_env = create_env(train_index // NUM_INSTANCES)
                 # Test flags here only refer to making agent act with test flag and
                 # not test split environments

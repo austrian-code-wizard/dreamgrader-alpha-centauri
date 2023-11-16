@@ -2,8 +2,8 @@
   "environment": {
     "type": "webshop",
     "max_steps": 3,
-    "num_train": 512,
-    "num_test": 128,
+    "num_train": 51200,
+    "num_test": 1280,
     "num_items": 3,
     "window_height": 540,
     "window_width": 960,
