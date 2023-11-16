@@ -25,8 +25,9 @@
         "obs_embedder": {
           "embed_dim": 64,
           "state_embed_config": {
-            "use_buffer": false,
-            "use_pool": false
+            "use_buffer": true,
+            "use_pool": false,
+            "final_relu": false
           }
         },
         "trajectory_embedder": {
@@ -37,8 +38,9 @@
           "reward_embed_dim": 32,
           "state_embed_dim": 64,
           "state_embed_config": {
-            "use_buffer": false,
-            "use_pool": false
+            "use_buffer": true,
+            "use_pool": false,
+            "final_relu": false
           }
         }
       }
@@ -67,8 +69,9 @@
           "action_embed_dim": 16,
           "embed_dim": 64,
           "state_embed_config": {
-            "use_buffer": false,
-            "use_pool": false
+            "use_buffer": true,
+            "use_pool": false,
+            "final_relu": false
           }
         }
       }

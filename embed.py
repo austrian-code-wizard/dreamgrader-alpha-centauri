@@ -1302,6 +1302,7 @@ class WebshopEmbedder(Embedder):
 
         self.use_pooled = config.get("use_pooled", True)
         self.use_buffer = config.get("use_buffer", True)
+        self.final_relu = config.get("final_relu", True)
 
         print(f"Using pooled: {self.use_pooled}")
         print(f"Using buffer: {self.use_buffer}")
@@ -1401,12 +1402,15 @@ class WebshopEmbedder(Embedder):
             src_pad_mask = torch.cat([torch.zeros((outputs.shape[1], 1), dtype=torch.bool).to(device), src_pad_mask], dim=1)
             outputs = self.transformer_encoder(outputs, src_key_padding_mask=src_pad_mask).permute(1, 0, 2)
             outputs = outputs[:,0,:]
-            outputs = F.relu(self.fc1(outputs))
+            outputs = self.fc1(outputs)
         else:
             outputs = torch.cat(outputs, dim=0)
             outputs = F.relu(self.fc1(outputs))
             outputs = F.relu(self.fc2(outputs))
-            outputs = F.relu(self.fc3(outputs))
+            outputs = self.fc3(outputs)
+
+        if self.final_relu:
+            return F.relu(outputs)
         return outputs
 
 
