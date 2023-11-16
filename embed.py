@@ -1294,6 +1294,7 @@ class WebshopEmbedder(Embedder):
     model = None
     processor = None
     use_pooled = True
+    use_buffer = True
 
     EMBEDDING_CACHE = {}
     
@@ -1367,11 +1368,13 @@ class WebshopEmbedder(Embedder):
             outputs = [o.unsqueeze(0) for o in outputs]
 
             # Cache outputs
-            for o, q, output in zip(not_cached_obs, not_cached_questions, outputs):
-                WebshopEmbedder.EMBEDDING_CACHE[q+o] = output
+            if self.use_buffer:
+                for o, q, output in zip(not_cached_obs, not_cached_questions, outputs):
+                    WebshopEmbedder.EMBEDDING_CACHE[q+o] = output
 
         # Get cached outputs
-        outputs = [WebshopEmbedder.EMBEDDING_CACHE[q+o] for o, q in zip(obs, questions)]
+        if self.use_buffer:
+            outputs = [WebshopEmbedder.EMBEDDING_CACHE[q+o] for o, q in zip(obs, questions)]
 
         if not WebshopEmbedder.use_pooled:
             max_len = max([o.shape[1] for o in outputs])
