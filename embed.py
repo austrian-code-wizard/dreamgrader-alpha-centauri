@@ -1,5 +1,5 @@
 import os
-os.environ["TRANSFORMERS_CACHE"] = "/iris/u/moritzst/.cache"
+# os.environ["TRANSFORMERS_CACHE"] = "/iris/u/moritzst/.cache"
 
 import abc
 import math
@@ -1333,7 +1333,71 @@ class WebshopEmbedder(Embedder):
     def _get_instruction(self, dom):
         return re.findall(r'<div id="instruction-text".*?>(.*?)</div>', dom, flags=re.DOTALL)[0]
 
+
     def forward(self, obs):
+
+        # Turn into B x S x D tensor
+        if not isinstance(obs, list):
+            obs = [obs]
+
+        questions = [o.question for o in obs]
+        obs = [o.observation for o in obs]
+        
+        obs = [self._clean_dom(o) for o in obs]
+
+        # Separate cached / not cached
+        not_cached = [(o, q) for o, q in zip(obs, questions) if q+o not in WebshopEmbedder.EMBEDDING_CACHE]
+        not_cached_obs = [o for o, _ in not_cached]
+        not_cached_questions = [q for _, q in not_cached]
+        
+        if len(not_cached_obs) > 0:
+            encoding = self.processor(html_strings=not_cached_obs, questions=not_cached_questions, padding=True, max_length=512, truncation=True, return_tensors="pt")
+            with torch.no_grad():
+                outputs = WebshopEmbedder.model(**encoding)
+
+            if WebshopEmbedder.use_pooled:
+                outputs = outputs["pooler_output"]
+            else:
+                outputs = outputs["last_hidden_state"]
+            
+            # List of 1 x S x D tensors or 1 x D tensors (pooled)
+            outputs = [o.unsqueeze(0) for o in outputs]
+
+            # Cache outputs
+            for o, q, output in zip(not_cached_obs, not_cached_questions, outputs):
+                WebshopEmbedder.EMBEDDING_CACHE[q+o] = output
+
+        # Get cached outputs
+        outputs = [WebshopEmbedder.EMBEDDING_CACHE[q+o] for o, q in zip(obs, questions)]
+
+        if not WebshopEmbedder.use_pooled:
+            max_len = max([o.shape[1] for o in outputs])
+            
+            # compute mask of shape B x S
+            pre_mask = [torch.zeros((o.shape[0], o.shape[1]), dtype=torch.bool).to(device) for o in outputs]
+            pre_mask = [F.pad(o, (0, max_len - o.shape[1]), "constant", 1) for o in pre_mask]
+            src_pad_mask = torch.cat(pre_mask, dim=0)
+
+            # Now pad all sequences to max length
+            outputs = [F.pad(o, (0, 0, 0, max_len - o.shape[1]), "constant", 0) for o in outputs]
+
+            # Outputs is now B x S x D
+            outputs = torch.cat(outputs, dim=0)
+            # Add cls token
+            cls_embedding = self.cls_embedding(torch.zeros((outputs.shape[0], 1), dtype=torch.long).to(device))
+            outputs = torch.cat([cls_embedding, outputs], dim=1).permute(1, 0, 2)
+
+            # Add zeros to pad mask
+            src_pad_mask = torch.cat([torch.zeros((outputs.shape[1], 1), dtype=torch.bool).to(device), src_pad_mask], dim=1)
+            outputs = self.transformer_encoder(outputs, src_key_padding_mask=src_pad_mask).permute(1, 0, 2)
+            outputs = outputs[:,0,:]
+        else:
+            outputs = torch.cat(outputs, dim=0)
+
+        return F.relu(self.fc1(outputs))
+
+
+    def forward_old(self, obs):
 
         # Turn into B x S x D tensor
         if not isinstance(obs, list):

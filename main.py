@@ -90,28 +90,27 @@ def run_episode(env, policy, experience_observers=None, test=False,
     global buffers
 
     if NUM_INSTANCES == 1:
-        e, r = _run_episode(
+        episode_buffer, render_buffer = _run_episode(
             env, policy, experience_observers=experience_observers, test=test,
             exploitation=exploitation)
-        return e[0], r[0]
-    
-    episode_buffer = buffers["episodes"]["test" if test else "train"]["exploitation" if exploitation else "exploration"]
-    render_buffer = buffers["renders"]["test" if test else "train"]["exploitation" if exploitation else "exploration"]
+    else:
+        episode_buffer = buffers["episodes"]["test" if test else "train"]["exploitation" if exploitation else "exploration"]
+        render_buffer = buffers["renders"]["test" if test else "train"]["exploitation" if exploitation else "exploration"]
 
-    if exploitation:
-        env.set_underlying_env_id([env.underlying_env_id[NUM_INSTANCES - 1 - len(buffers["episodes"]["test" if test else "train"]["exploration"])]] * NUM_INSTANCES)
+        if exploitation:
+            env.set_underlying_env_id([env.underlying_env_id[NUM_INSTANCES - 1 - len(buffers["episodes"]["test" if test else "train"]["exploration"])]] * NUM_INSTANCES)
 
-    if len(episode_buffer) == 0:
-        episodes, renders = _run_episode(
-            env, policy, experience_observers=experience_observers, test=test,
-            exploitation=exploitation)
-        if not exploitation:
-            episode_buffer.extend(episodes)
-            render_buffer.extend(renders)
-        else:
-            # Need to handle that exploitation only uses a specific trajectory
-            episode_buffer.append(episodes[0])
-            render_buffer.append(renders[0])
+        if len(episode_buffer) == 0:
+            episodes, renders = _run_episode(
+                env, policy, experience_observers=experience_observers, test=test,
+                exploitation=exploitation)
+            if not exploitation:
+                episode_buffer.extend(episodes)
+                render_buffer.extend(renders)
+            else:
+                # Need to handle that exploitation only uses a specific trajectory
+                episode_buffer.append(episodes[0])
+                render_buffer.append(renders[0])
     
     e = episode_buffer.pop(0)
     r = render_buffer.pop(0)
@@ -419,7 +418,7 @@ def main():
             test_exploration_lengths = []
             trajectory_embedder.use_ids(False)
             clear_buffers()
-            for test_index in tqdm.tqdm(range(128)):
+            for test_index in tqdm.tqdm(range(4)):
                 exploration_env = create_env(test_index // NUM_INSTANCES, test=True)
                 exploration_episode, exploration_render = run_episode(
                         env_class.instruction_wrapper()(
@@ -493,7 +492,7 @@ def main():
             os.makedirs(visualize_dir, exist_ok=True)
             clear_buffers()
             train_no_eps_rewards = []
-            for train_index in tqdm.tqdm(range(64)):
+            for train_index in tqdm.tqdm(range(4)):
                 exploration_env = create_env(train_index // NUM_INSTANCES)
                 # Test flags here only refer to making agent act with test flag and
                 # not test split environments
