@@ -1291,7 +1291,7 @@ class WebshopEmbedder(Embedder):
     nhead = 4  # number of heads in nn.MultiheadAttention
     dropout = 0.0  # dropout probability
 
-    model = None
+    _model = None
     processor = None
 
     EMBEDDING_CACHE = {}
@@ -1300,32 +1300,47 @@ class WebshopEmbedder(Embedder):
         print(f"Initializing with embed dim {embed_dim}")
         super().__init__(embed_dim)
 
-        self.use_pooled = config.get("use_pooled", True)
+        self.use_pooled = config.get("use_pool", True)
         self.use_buffer = config.get("use_buffer", True)
         self.final_relu = config.get("final_relu", True)
+        self.unfreeze_layers = config.get("unfreeze_layers", [])
 
-        print(f"Using pooled: {self.use_pooled}")
-        print(f"Using buffer: {self.use_buffer}")
+        # assert not (self.unfreeze_layers and not self.use_pooled), "Unfreezing only works with pooled embeddings"
+
 
         if WebshopEmbedder.processor is None:
             WebshopEmbedder.processor = MarkupLMProcessor.from_pretrained(WebshopEmbedder.pretrained_path)
 
-        if WebshopEmbedder.model is None:
-            WebshopEmbedder.model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
+        if WebshopEmbedder._model is None and not self.unfreeze_layers:
+            WebshopEmbedder._model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
+            WebshopEmbedder._model.eval()
+            self.model = WebshopEmbedder._model
 
-            # Set model to eval mode
-            WebshopEmbedder.model.eval()
+        if self.unfreeze_layers:
+            self.model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
+            if not self.use_pooled:
+                self.model.pooler = None
+            # Freeze all layers
+            for name, param in self.model.named_parameters():
+                if any([layer in name for layer in self.unfreeze_layers]):
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
 
-        if not self.use_pooled:
+            print(f"Num trainable params: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
+
+        if not self.use_pooled and not self.unfreeze_layers:
             self.cls_embedding = nn.Embedding(2, WebshopEmbedder.lm_embedding_size)
             encoder_layers = nn.TransformerEncoderLayer(type(self).lm_embedding_size, self.nhead, type(self).lm_embedding_size, self.dropout)
             self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
 
             self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
-        else:
+        elif self.use_pooled and not self.unfreeze_layers:
             self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, WebshopEmbedder.lm_embedding_size)
             self.fc2 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
             self.fc3 = nn.Linear(embed_dim, embed_dim)
+        else:
+            self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
 
 
     def _clean_dom(self, dom):
@@ -1361,8 +1376,12 @@ class WebshopEmbedder(Embedder):
         
         if len(not_cached_obs) > 0:
             encoding = self.processor(html_strings=not_cached_obs, questions=not_cached_questions, padding=True, max_length=512, truncation=True, return_tensors="pt")
-            with torch.no_grad():
-                outputs = WebshopEmbedder.model(**encoding)
+
+            if not self.unfreeze_layers:
+                with torch.no_grad():
+                    outputs = self.model(**encoding)
+            else:
+                outputs = self.model(**encoding)
 
             if self.use_pooled:
                 outputs = outputs["pooler_output"]
@@ -1381,7 +1400,7 @@ class WebshopEmbedder(Embedder):
         if self.use_buffer:
             outputs = [WebshopEmbedder.EMBEDDING_CACHE[q+o] for o, q in zip(obs, questions)]
 
-        if not self.use_pooled:
+        if not self.use_pooled and not self.unfreeze_layers:
             max_len = max([o.shape[1] for o in outputs])
             
             # compute mask of shape B x S
@@ -1403,11 +1422,20 @@ class WebshopEmbedder(Embedder):
             outputs = self.transformer_encoder(outputs, src_key_padding_mask=src_pad_mask).permute(1, 0, 2)
             outputs = outputs[:,0,:]
             outputs = self.fc1(outputs)
-        else:
+        elif self.use_pooled and not self.unfreeze_layers:
             outputs = torch.cat(outputs, dim=0)
             outputs = F.relu(self.fc1(outputs))
             outputs = F.relu(self.fc2(outputs))
             outputs = self.fc3(outputs)
+        elif self.use_pooled and self.unfreeze_layers:
+            outputs = torch.cat(outputs, dim=0)
+            outputs = self.fc1(outputs)
+        elif self.use_pooled and self.unfreeze_layers:
+            outputs = [o[:,0,:] for o in outputs]
+            outputs = torch.cat(outputs, dim=0)
+            outputs = self.fc1(outputs)
+        else:
+            raise NotImplementedError("This should not happen")
 
         if self.final_relu:
             return F.relu(outputs)

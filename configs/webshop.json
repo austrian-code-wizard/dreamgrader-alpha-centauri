@@ -2,8 +2,8 @@
   "environment": {
     "type": "webshop",
     "max_steps": 3,
-    "num_train": 51200,
-    "num_test": 1280,
+    "num_train": 512,
+    "num_test": 128,
     "num_items": 3,
     "window_height": 540,
     "window_width": 960,
@@ -19,15 +19,16 @@
       "epsilon_schedule": {
         "begin": 1.0,
         "end": 0.05,
-        "total_steps": 250000
+        "total_steps": 100000
       },
       "embedder": {
         "obs_embedder": {
           "embed_dim": 64,
           "state_embed_config": {
-            "use_buffer": true,
-            "use_pool": false,
-            "final_relu": false
+            "use_buffer": false,
+            "use_pool": true,
+            "final_relu": true,
+            "unfreeze_layers": ["encoder.layer.11", "pooler"]
           }
         },
         "trajectory_embedder": {
@@ -38,9 +39,10 @@
           "reward_embed_dim": 32,
           "state_embed_dim": 64,
           "state_embed_config": {
-            "use_buffer": true,
-            "use_pool": false,
-            "final_relu": false
+            "use_buffer": false,
+            "use_pool": true,
+            "final_relu": true,
+            "unfreeze_layers": ["encoder.layer.11", "pooler"]
           }
         }
       }
@@ -50,7 +52,7 @@
       "max_buffer_size": 40000
     },
     "update_freq": 4,
-    "min_buffer_size": 500,
+    "min_buffer_size": 5,
     "learning_rate": 0.0001,
     "sync_target_freq": 5000,
     "batch_size": 32,
@@ -61,7 +63,7 @@
       "epsilon_schedule": {
         "begin": 1.0,
         "end": 0.05,
-        "total_steps": 16000
+        "total_steps": 100000
       },
       "embedder": {
         "experience_embedder": {
@@ -69,9 +71,10 @@
           "action_embed_dim": 16,
           "embed_dim": 64,
           "state_embed_config": {
-            "use_buffer": true,
-            "use_pool": false,
-            "final_relu": false
+            "use_buffer": false,
+            "use_pool": true,
+            "final_relu": true,
+            "unfreeze_layers": ["encoder.layer.11", "pooler"]
           }
         }
       }
@@ -80,7 +83,7 @@
       "sequence_length": 4,
       "max_buffer_size": 16000
     },
-    "min_buffer_size": 4000,
+    "min_buffer_size": 4,
     "learning_rate": 0.0001,
     "sync_target_freq": 5000,
     "batch_size": 32,
