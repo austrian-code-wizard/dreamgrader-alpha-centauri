@@ -207,7 +207,12 @@ class TrajectoryEmbedder(Embedder, relabel.RewardLabeler):
 
         # (batch_size,)
         # HACK: This is just the env_ids now
-        id_contexts = torch.tensor([traj[0].state.env_id for traj in trajectories])
+        if isinstance(trajectories[0][0].state.env_id, int):
+            env_ids = [traj[0].state.env_id for traj in trajectories]
+        elif isinstance(trajectories[0][0].state.env_id, list):
+            # Assume that correct env_ids are always shuffled
+            env_ids = [traj[0].state.env_id[0] for traj in trajectories]
+        id_contexts = torch.tensor(env_ids)
         #id_contexts = self._id_embedder(
         #        torch.tensor([traj[0].state.env_id for traj in trajectories]))
 
@@ -1297,37 +1302,37 @@ class WebshopEmbedder(Embedder):
     EMBEDDING_CACHE = {}
     
     def __init__(self, observation_space, embed_dim=256, config={}):
-        print(f"Initializing with embed dim {embed_dim}")
         super().__init__(embed_dim)
 
         self.use_pooled = config.get("use_pool", True)
         self.use_buffer = config.get("use_buffer", True)
         self.final_relu = config.get("final_relu", True)
         self.unfreeze_layers = config.get("unfreeze_layers", [])
+        self.is_already_embedded = observation_space.dtype == np.float32
 
-        # assert not (self.unfreeze_layers and not self.use_pooled), "Unfreezing only works with pooled embeddings"
+        if not self.is_already_embedded:
+            if WebshopEmbedder.processor is None:
+                WebshopEmbedder.processor = MarkupLMProcessor.from_pretrained(WebshopEmbedder.pretrained_path)
 
+            if WebshopEmbedder._model is None and not self.unfreeze_layers:
+                WebshopEmbedder._model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
+                WebshopEmbedder._model.eval()
 
-        if WebshopEmbedder.processor is None:
-            WebshopEmbedder.processor = MarkupLMProcessor.from_pretrained(WebshopEmbedder.pretrained_path)
+            if not self.unfreeze_layers:
+                self.model = WebshopEmbedder._model
 
-        if WebshopEmbedder._model is None and not self.unfreeze_layers:
-            WebshopEmbedder._model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
-            WebshopEmbedder._model.eval()
-            self.model = WebshopEmbedder._model
+            if self.unfreeze_layers:
+                self.model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
+                if not self.use_pooled:
+                    self.model.pooler = None
+                # Freeze all layers
+                for name, param in self.model.named_parameters():
+                    if any([layer in name for layer in self.unfreeze_layers]):
+                        param.requires_grad = True
+                    else:
+                        param.requires_grad = False
 
-        if self.unfreeze_layers:
-            self.model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
-            if not self.use_pooled:
-                self.model.pooler = None
-            # Freeze all layers
-            for name, param in self.model.named_parameters():
-                if any([layer in name for layer in self.unfreeze_layers]):
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-
-            print(f"Num trainable params: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
+                print(f"Num trainable params: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
 
         if not self.use_pooled and not self.unfreeze_layers:
             self.cls_embedding = nn.Embedding(2, WebshopEmbedder.lm_embedding_size)
@@ -1366,39 +1371,44 @@ class WebshopEmbedder(Embedder):
 
         questions = [o.question for o in obs]
         obs = [o.observation for o in obs]
+
+        if not self.is_already_embedded:
         
-        obs = [self._clean_dom(o) for o in obs]
+            obs = [self._clean_dom(o) for o in obs]
 
-        # Separate cached / not cached
-        not_cached = [(o, q) for o, q in zip(obs, questions) if q+o not in WebshopEmbedder.EMBEDDING_CACHE]
-        not_cached_obs = [o for o, _ in not_cached]
-        not_cached_questions = [q for _, q in not_cached]
-        
-        if len(not_cached_obs) > 0:
-            encoding = self.processor(html_strings=not_cached_obs, questions=not_cached_questions, padding=True, max_length=512, truncation=True, return_tensors="pt")
-
-            if not self.unfreeze_layers:
-                with torch.no_grad():
-                    outputs = self.model(**encoding)
-            else:
-                outputs = self.model(**encoding)
-
-            if self.use_pooled:
-                outputs = outputs["pooler_output"]
-            else:
-                outputs = outputs["last_hidden_state"]
+            # Separate cached / not cached
+            not_cached = [(o, q) for o, q in zip(obs, questions) if q+o not in WebshopEmbedder.EMBEDDING_CACHE]
+            not_cached_obs = [o for o, _ in not_cached]
+            not_cached_questions = [q for _, q in not_cached]
             
-            # List of 1 x S x D tensors or 1 x D tensors (pooled)
-            outputs = [o.unsqueeze(0) for o in outputs]
+            if len(not_cached_obs) > 0:
+                encoding = self.processor(html_strings=not_cached_obs, questions=not_cached_questions, padding=True, max_length=512, truncation=True, return_tensors="pt")
 
-            # Cache outputs
+                if not self.unfreeze_layers:
+                    with torch.no_grad():
+                        outputs = self.model(**encoding)
+                else:
+                    outputs = self.model(**encoding)
+
+                if self.use_pooled:
+                    outputs = outputs["pooler_output"]
+                else:
+                    outputs = outputs["last_hidden_state"]
+                
+                # List of 1 x S x D tensors or 1 x D tensors (pooled)
+                outputs = [o.unsqueeze(0) for o in outputs]
+
+                # Cache outputs
+                if self.use_buffer:
+                    for o, q, output in zip(not_cached_obs, not_cached_questions, outputs):
+                        WebshopEmbedder.EMBEDDING_CACHE[q+o] = output
+
+            # Get cached outputs
             if self.use_buffer:
-                for o, q, output in zip(not_cached_obs, not_cached_questions, outputs):
-                    WebshopEmbedder.EMBEDDING_CACHE[q+o] = output
+                outputs = [WebshopEmbedder.EMBEDDING_CACHE[q+o] for o, q in zip(obs, questions)]
 
-        # Get cached outputs
-        if self.use_buffer:
-            outputs = [WebshopEmbedder.EMBEDDING_CACHE[q+o] for o, q in zip(obs, questions)]
+        else:
+            outputs = [o.detach() for o in obs]
 
         if not self.use_pooled and not self.unfreeze_layers:
             max_len = max([o.shape[1] for o in outputs])
@@ -1441,163 +1451,6 @@ class WebshopEmbedder(Embedder):
             return F.relu(outputs)
         return outputs
 
-
-    def forward_old(self, obs):
-
-        # Turn into B x S x D tensor
-        if not isinstance(obs, list):
-            obs = [obs]
-
-        obs = [o.observation for o in obs]
-        questions = [self._get_instruction(o) for o in obs]
-        
-        obs = [self._clean_dom(o) for o in obs]
-
-        # Separate cached / not cached
-        not_cached = [(o, q) for o, q in zip(obs, questions) if o not in WebshopEmbedder.EMBEDDING_CACHE]
-        not_cached_obs = [o for o, _ in not_cached]
-        not_cached_questions = [q for _, q in not_cached]
-        
-        if len(not_cached_obs) > 0:
-            num_not_cached = len(not_cached_obs)
-            encoding = self.processor(html_strings=not_cached_obs + not_cached_questions, padding=True, max_length=512, truncation=True, return_tensors="pt")
-            with torch.no_grad():
-                outputs = WebshopEmbedder.model(**encoding)
-
-            outputs = [o.unsqueeze(0) for o in outputs["last_hidden_state"]]
-
-            # Cache outputs
-            for o, output, question_output in zip(not_cached_obs, outputs[:num_not_cached], outputs[num_not_cached:]):
-                WebshopEmbedder.EMBEDDING_CACHE[o] = (output, question_output)
-
-        # Get cached outputs
-        outputs = [WebshopEmbedder.EMBEDDING_CACHE[o] for o in obs]
-
-        # Concat outputs from dom and question with special embedding in between
-        concat_embedding = self.cls_embedding(torch.ones((1, 1), dtype=torch.long).to(device))
-        outputs = [torch.cat([o, concat_embedding, q], dim=1) for o, q in outputs]
-
-        max_len = max([o.shape[1] for o in outputs])
-        
-        # compute mask of shape B x S
-        pre_mask = [torch.zeros((o.shape[0], o.shape[1]), dtype=torch.bool).to(device) for o in outputs]
-        pre_mask = [F.pad(o, (0, max_len - o.shape[1]), "constant", 1) for o in pre_mask]
-        src_pad_mask = torch.cat(pre_mask, dim=0)
-
-        # Now pad all sequences to max length
-        outputs = [F.pad(o, (0, 0, 0, max_len - o.shape[1]), "constant", 0) for o in outputs]
-        # Outputs is now B x S x D
-        outputs = torch.cat(outputs, dim=0)
-        # Add cls token
-        cls_embedding = self.cls_embedding(torch.zeros((outputs.shape[0], 1), dtype=torch.long).to(device))
-        outputs = torch.cat([cls_embedding, outputs], dim=1).permute(1, 0, 2)
-
-        # Add zeros to pad mask
-        src_pad_mask = torch.cat([torch.zeros((outputs.shape[1], 1), dtype=torch.bool).to(device), src_pad_mask], dim=1)
-        outputs = self.transformer_encoder(outputs, src_key_padding_mask=src_pad_mask).permute(1, 0, 2)
-        outputs = outputs[:,0,:]
-
-        return F.relu(self.fc1(outputs))
-
-"""class WebshopEmbedder(Embedder):
-    pretrained_path = "microsoft/markuplm-base"
-    lm_embedding_size = 768
-    nlayers = 2 #6  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-    nhead = 4  # number of heads in nn.MultiheadAttention
-    dropout = 0.1  # dropout probability
-    classifier_dropout = 0.1
-
-    model = None
-    processor = None
-    use_pooled = False
-
-    EMBEDDING_CACHE = {}
-    
-    def __init__(self, observation_space, embed_dim=256):
-        print(f"Initializing with embed dim {embed_dim}")
-        super().__init__(embed_dim)
-
-        if WebshopEmbedder.processor is None:
-            WebshopEmbedder.processor = MarkupLMProcessor.from_pretrained(WebshopEmbedder.pretrained_path)
-
-        if WebshopEmbedder.model is None:
-            WebshopEmbedder.model = MarkupLMModel.from_pretrained(WebshopEmbedder.pretrained_path).to(device)
-
-            # Set model to eval mode
-            WebshopEmbedder.model.eval()
-
-        if not WebshopEmbedder.use_pooled:
-            self.cls_embedding = nn.Embedding(2, WebshopEmbedder.lm_embedding_size)
-            encoder_layers = nn.TransformerEncoderLayer(type(self).lm_embedding_size, self.nhead, type(self).lm_embedding_size, self.dropout)
-            self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
-
-        self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
-
-
-    def _clean_dom(self, dom):
-        # Remove best product label
-        dom = re.sub(r'<div id="best-products".*?</div>\n', "", dom, flags=re.DOTALL)
-
-        # Remove instruction text
-        dom = re.sub(r'<div id="instruction-text".*?</div>\n', "", dom, flags=re.DOTALL)
-
-        # Remove head
-        return re.sub(r'<head>.*?</head>\n', "", dom, flags=re.DOTALL)
-
-
-    def _get_instruction(self, dom):
-        return re.findall(r'<div id="instruction-text".*?>(.*?)</div>', dom, flags=re.DOTALL)[0]
-
-
-    def forward(self, obs):
-
-        # Turn into B x S x D tensor
-        if not isinstance(obs, list):
-            obs = [obs]
-
-        obs = [o.observation for o in obs]
-        questions = [self._get_instruction(o) for o in obs]
-        
-        obs = [self._clean_dom(o) for o in obs]
-
-        # Separate cached / not cached
-        not_cached = [(o, q) for o, q in zip(obs, questions) if o not in WebshopEmbedder.EMBEDDING_CACHE]
-        not_cached_obs = [o for o, _ in not_cached]
-        not_cached_questions = [q for _, q in not_cached]
-        
-        if len(not_cached_obs) > 0:
-            num_not_cached = len(not_cached_obs)
-            encoding = self.processor(html_strings=not_cached_obs + not_cached_questions, padding=True, max_length=512, truncation=True, return_tensors="pt")
-            with torch.no_grad():
-                outputs = WebshopEmbedder.model(**encoding)
-
-            outputs = [o.unsqueeze(0) for o in outputs["last_hidden_state"]]
-
-            # Cache outputs
-            for o, output, question_output in zip(not_cached_obs, outputs[:num_not_cached], outputs[num_not_cached:]):
-                WebshopEmbedder.EMBEDDING_CACHE[o] = (output, question_output)
-
-        # Get cached outputs
-        outputs = [WebshopEmbedder.EMBEDDING_CACHE[o] for o in obs]
-
-        # Concat outputs from dom and question with special embedding in between
-        concat_embedding = self.cls_embedding(torch.ones((1, 1), dtype=torch.long).to(device))
-        outputs = [torch.cat([o, concat_embedding, q], dim=1) for o, q in outputs]
-
-        outputs = nn.utils.rnn.pad_sequence(outputs, batch_first=True, padding_value=self.processor.tokenizer.pad_tag_id).to(device)
-        # Generate padding mask
-        src_pad_mask = (obs == self.processor.tokenizer.pad_tag_id).to(device)
-        # Add cls token
-        cls_embedding = self.cls_embedding(torch.zeros((outputs.shape[0], 1), dtype=torch.long).to(device))
-        outputs = torch.cat([cls_embedding, outputs], dim=1).permute(1, 0, 2)
-
-        # Add zeros to pad mask
-        src_pad_mask = torch.cat([torch.zeros((outputs.shape[0], 1), dtype=torch.bool).to(device), src_pad_mask], dim=1)
-        outputs = self.transformer_encoder(outputs, key_padding_mask=src_pad_mask).permute(1, 0, 2)
-        outputs = outputs[:,0,:]
-
-        outputs = F.relu(self.fc1(outputs))
-        return outputs"""
 
 class SimpleGridStateEmbedder(Embedder):
     """Embedder for SimpleGridEnv states.

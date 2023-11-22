@@ -483,9 +483,9 @@ def main():
             tb_writer.add_scalar(
                     "reward/test_recall", recall, step,
                     exploration_steps + instruction_steps)
-            tb_writer.add_scalar(
-                    "reward/test_num_bug", np.mean(test_bug_is_present), step,
-                    exploration_steps + instruction_steps)
+            # tb_writer.add_scalar(
+            #         "reward/test_num_bug", np.mean(test_bug_is_present), step,
+            #         exploration_steps + instruction_steps)
 
             # Visualize training split
             visualize_dir = os.path.join(exp_dir, "visualize", str(step), "train")
@@ -623,9 +623,9 @@ def main():
             tb_writer.add_scalar(
                     "reward/recall", recall, step,
                     exploration_steps + instruction_steps)
-            tb_writer.add_scalar(
-                    "reward/num_bug", np.mean(bug_is_present), step,
-                    exploration_steps + instruction_steps)
+            # tb_writer.add_scalar(
+            #         "reward/num_bug", np.mean(bug_is_present), step,
+            #         exploration_steps + instruction_steps)
 
         if step != 0 and step % 20000 == 0:
             print("Saving checkpoint")

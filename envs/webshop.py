@@ -1,16 +1,80 @@
 import time
 from string import ascii_letters, digits, punctuation
 
+import re
 import torch
 import numpy as np
 from gym import spaces
 import gymnasium as gym
+from transformers import MarkupLMProcessor, MarkupLMModel
 
 import render
 import meta_exploration
 from envs.miniwob.constants import NUM_INSTANCES
 from web_agent_site.envs.web_agent_dream_env import WebAgentDreamEnv
 from web_agent_site.envs.web_agent_dream_env_dom import WebAgentDreamDOMEnv
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+class MarkupLMWrapper(gym.Wrapper):
+    model = None
+    processor = None
+    pretrained_path = "microsoft/markuplm-base"
+
+    def __init__(self, env):
+        super().__init__(env)
+        if MarkupLMWrapper.processor is None:
+            MarkupLMWrapper.processor = MarkupLMProcessor.from_pretrained(MarkupLMWrapper.pretrained_path)
+
+        if MarkupLMWrapper.model is None:
+            MarkupLMWrapper.model = MarkupLMModel.from_pretrained(MarkupLMWrapper.pretrained_path).to(device)
+            MarkupLMWrapper.model.eval()
+
+        self.observation_space = gym.spaces.Box(
+            low=0,
+            high=1,
+            shape=(MarkupLMWrapper.processor.tokenizer.model_max_length,),
+            dtype=np.float32
+        )
+
+    def _clean_dom(self, dom):
+        # Remove best product label
+        dom = re.sub(r'<div id="best-products".*?</div>\n', "", dom, flags=re.DOTALL)
+
+        # Remove instruction text
+        dom = re.sub(r'<div id="instruction-text".*?</div>\n', "", dom, flags=re.DOTALL)
+
+        # Remove head
+        return re.sub(r'<head>.*?</head>\n', "", dom, flags=re.DOTALL)
+
+
+    def _get_instruction(self, dom):
+        return re.findall(r'<div id="instruction-text".*?>(.*?)</div>', dom, flags=re.DOTALL)[0]
+
+    def _get_embeddings(self, dom, question):
+
+        dom = self._clean_dom(dom)
+
+        encoding = self.processor(html_strings=[dom], questions=[question], padding=True, max_length=512, truncation=True, return_tensors="pt")
+
+        with torch.no_grad():
+            outputs = self.model(**encoding)
+
+        outputs = outputs["last_hidden_state"][0]
+        
+        # List of 1 x S x D tensors or 1 x D tensors (pooled)
+        return outputs.unsqueeze(0)
+
+    def step(self, action):
+        state, reward, done, info = self.env.step(action)
+        state["html"] = self._get_embeddings(state["html"], state["instruction_text"])
+        return state, reward, done, info
+
+    def reset(self, **kwargs):
+        state, info = self.env.reset(**kwargs)
+        state["html"] = self._get_embeddings(state["html"], state["instruction_text"])
+        return state, info
 
 
 class InstructionWrapper(meta_exploration.InstructionWrapper):
@@ -44,7 +108,7 @@ class InstructionWrapper(meta_exploration.InstructionWrapper):
             done = [True] * len(action)
             reward = []
             for a, label in zip(action, self.env_id):
-                reward.append(1 if (a == label).item() else -0.1)
+                reward.append(1 if any((a == l).item() for l in label) else -0.1)
             # Take dummy action, since existing action may be out of
             # bounds
             # Bypass parent class
@@ -67,6 +131,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     NUM_ACTIONS = None
     ITER = None
     NUM_DEMOS = None
+    EMBED_STATES = None
 
     def __init__(self, env_id, _):
         assert NUM_INSTANCES == 1, "Only supporting 1 concurrent env with webshop at the moment"
@@ -75,8 +140,11 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         
         self._env = WebAgentDreamDOMEnv(window_height=self.WINDOW_HEIGHT, window_width=self.WINDOW_WIDTH, scroll_amount=self.SCROLL_AMOUNT, scroll_time=self.SCROLL_TIME)
 
+        if self.EMBED_STATES:
+            self._env = MarkupLMWrapper(self._env)
+
         self.observation_space = gym.spaces.Dict({
-            "observation": gym.spaces.Text(min_length=0, max_length=100000, charset=ascii_letters + digits + punctuation),
+            "observation": self._env.observation_space,
             "env_id": gym.spaces.Box(np.array([0]),
                 np.array([self.NUM_ITEMS]), # TODO: check if this actually matters
                 dtype=int)
@@ -103,6 +171,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.NUM_ACTIONS = config.get("num_actions", 4)
         cls.USE_SCREENSHOT = config.get("use_screenshot", False)
         cls.NUM_DEMOS = config.get("num_demos", 0)
+        cls.EMBED_STATES = config.get("embed_states", False)
 
 
     @classmethod
@@ -134,6 +203,8 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     def _step(self, action):
         # print(f"Action: {action}")
         assert len(action) == 1, "Only supporting 1 concurrent env with webshop at the moment"
+        if self.exploitation:
+            return [{"observation": torch.zeros((1)) if self.EMBED_STATES else "", "question": ""}], [0], [True], [None]
         start = time.time()
         state, reward, done, info = self._env.step(action[0])
         # print(f"Time to step: {time.time() - start}")
@@ -147,15 +218,19 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
 
     def _reset(self):
         if self.exploitation:
-            return [{"observation": "", "question": ""}]
+            return [{"observation": torch.zeros((1)) if self.EMBED_STATES else "", "question": ""}]
         self._steps = 0
         start = time.time()
         state, _ = self._env.reset(seed=self._env_id[0])
         # print(f"Time to reset: {time.time() - start}")
         self._questions = [state["instruction_text"]]
 
-        # self._correct_answers = [[p["index"] for p in best_products]]
-        self._correct_answers = [state["best_products"][0]["index"]]
+        self._correct_answers = [[p["index"] for p in state["best_products"]]]
+
+        # Need to shuffle correct answers for training
+        for i in range(len(self._correct_answers)):
+            np.random.shuffle(self._correct_answers[i])
+    
         state = state["html"]
         return [{
             "observation": state,
@@ -188,6 +263,8 @@ class WebshopObservation:
 
     @property
     def is_cuda(self):
+        if isinstance(self._observation, torch.Tensor):
+            return self._observation.is_cuda
         return False
 
     @property
@@ -200,10 +277,27 @@ class WebshopObservation:
 
     def cpu(self):
         # Hacky way to accomodate cpu/cuda switching in observation buffer
-        return self
+        if not isinstance(self._observation, torch.Tensor):
+            return self
+        return WebshopObservation({
+            "observation": self._observation.detach().cpu(),
+            "question": self._question
+        })
 
     def pin_memory(self):
-        return self
+        if not isinstance(self._observation, torch.Tensor):
+            return self
+        return WebshopObservation({
+            "observation": self._observation.pin_memory(),
+            "question": self._question
+        })
 
     def cuda(self, **kwargs):
-        return self
+        if not torch.cuda.is_available():
+            return self
+        if not isinstance(self._observation, torch.Tensor):
+            return self
+        return WebshopObservation({
+            "observation": self._observation.cuda(**kwargs),
+            "question": self._question
+        })

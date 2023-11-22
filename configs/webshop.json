@@ -1,17 +1,18 @@
 {
   "environment": {
     "type": "webshop",
-    "max_steps": 3,
-    "num_train": 512,
-    "num_test": 128,
-    "num_items": 3,
+    "max_steps": 5,
+    "num_train": 50000,
+    "num_test": 1024,
+    "num_items": 6,
     "window_height": 540,
     "window_width": 960,
     "scroll_amount": 270,
     "scroll_time": 100,
-    "num_actions": 2,
+    "num_actions": 6,
     "use_screenshot": false,
-    "num_demos": 2000
+    "num_demos": 0,
+    "embed_states": true
   },
   "instruction_agent": {
     "type": "learned",
@@ -26,36 +27,37 @@
           "embed_dim": 64,
           "state_embed_config": {
             "use_buffer": false,
-            "use_pool": true,
+            "use_pool": false,
             "final_relu": true,
-            "unfreeze_layers": ["encoder.layer.11", "pooler"]
+            "unfreeze_layers": []
           }
         },
         "trajectory_embedder": {
           "penalty": 0.1,
-          "decoder_output_dim": 3
+          "decoder_output_dim": 6
         },
         "transition_embedder": {
           "reward_embed_dim": 32,
           "state_embed_dim": 64,
           "state_embed_config": {
             "use_buffer": false,
-            "use_pool": true,
+            "use_pool": false,
             "final_relu": true,
-            "unfreeze_layers": ["encoder.layer.11", "pooler"]
+            "unfreeze_layers": []
           }
         }
       }
     },
     "buffer": {
-      "sequence_length": 4,
-      "max_buffer_size": 40000
+      "sequence_length": 6,
+      "max_buffer_size": 10000,
+      "store_on_cpu": true
     },
     "update_freq": 4,
-    "min_buffer_size": 5,
+    "min_buffer_size": 500,
     "learning_rate": 0.0001,
     "sync_target_freq": 5000,
-    "batch_size": 32,
+    "batch_size": 16,
     "max_grad_norm": 10
   },
   "exploration_agent": {
@@ -72,21 +74,22 @@
           "embed_dim": 64,
           "state_embed_config": {
             "use_buffer": false,
-            "use_pool": true,
+            "use_pool": false,
             "final_relu": true,
-            "unfreeze_layers": ["encoder.layer.11", "pooler"]
+            "unfreeze_layers": []
           }
         }
       }
     },
     "buffer": {
-      "sequence_length": 4,
-      "max_buffer_size": 16000
+      "sequence_length": 6,
+      "max_buffer_size": 10000,
+      "store_on_cpu": true
     },
-    "min_buffer_size": 4,
+    "min_buffer_size": 4000,
     "learning_rate": 0.0001,
     "sync_target_freq": 5000,
-    "batch_size": 32,
+    "batch_size": 16,
     "update_freq": 4,
     "max_grad_norm": 10
   }
