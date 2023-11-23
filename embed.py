@@ -1292,9 +1292,6 @@ class MiniWobEmbedder(Embedder):
 class WebshopEmbedder(Embedder):
     pretrained_path = "microsoft/markuplm-base"
     lm_embedding_size = 768
-    nlayers = 1 #6  # number of nn.TransformerEncoderLayer in nn.TransformerEncoder
-    nhead = 4  # number of heads in nn.MultiheadAttention
-    dropout = 0.0  # dropout probability
 
     _model = None
     processor = None
@@ -1307,6 +1304,9 @@ class WebshopEmbedder(Embedder):
         self.use_pooled = config.get("use_pool", True)
         self.use_buffer = config.get("use_buffer", True)
         self.final_relu = config.get("final_relu", True)
+        self.n_layers = config.get("n_layers", 1)
+        self.heads = config.get("heads", 4)
+        self.dropout = config.get("dropout", 0.0)
         self.unfreeze_layers = config.get("unfreeze_layers", [])
         self.is_already_embedded = observation_space.dtype == np.float32
 
