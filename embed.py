@@ -1291,7 +1291,6 @@ class MiniWobEmbedder(Embedder):
 
 class WebshopEmbedder(Embedder):
     pretrained_path = "microsoft/markuplm-base"
-    lm_embedding_size = 768
 
     _model = None
     processor = None
@@ -1334,15 +1333,19 @@ class WebshopEmbedder(Embedder):
 
                 print(f"Num trainable params: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
 
-        if not self.use_pooled and not self.unfreeze_layers:
-            self.cls_embedding = nn.Embedding(2, WebshopEmbedder.lm_embedding_size)
-            encoder_layers = nn.TransformerEncoderLayer(type(self).lm_embedding_size, self.nhead, type(self).lm_embedding_size, self.dropout)
-            self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.nlayers)
+            lm_embedding_size = self.model.config.hidden_size
+        else:
+            lm_embedding_size = observation_space.shape[0]
 
-            self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
+        if not self.use_pooled and not self.unfreeze_layers:
+            self.cls_embedding = nn.Embedding(2, lm_embedding_size)
+            encoder_layers = nn.TransformerEncoderLayer(lm_embedding_size, self.heads, lm_embedding_size, self.dropout)
+            self.transformer_encoder = nn.TransformerEncoder(encoder_layers, self.n_layers)
+
+            self.fc1 = nn.Linear(lm_embedding_size, embed_dim)
         elif self.use_pooled and not self.unfreeze_layers:
-            self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, WebshopEmbedder.lm_embedding_size)
-            self.fc2 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)
+            self.fc1 = nn.Linear(lm_embedding_size, lm_embedding_size)
+            self.fc2 = nn.Linear(lm_embedding_size, embed_dim)
             self.fc3 = nn.Linear(embed_dim, embed_dim)
         else:
             self.fc1 = nn.Linear(WebshopEmbedder.lm_embedding_size, embed_dim)

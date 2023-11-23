@@ -20,21 +20,20 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 class MarkupLMWrapper(gym.Wrapper):
     model = None
     processor = None
-    pretrained_path = "microsoft/markuplm-base"
 
-    def __init__(self, env):
+    def __init__(self, env, path=None):
         super().__init__(env)
         if MarkupLMWrapper.processor is None:
-            MarkupLMWrapper.processor = MarkupLMProcessor.from_pretrained(MarkupLMWrapper.pretrained_path)
+            MarkupLMWrapper.processor = MarkupLMProcessor.from_pretrained(path)
 
         if MarkupLMWrapper.model is None:
-            MarkupLMWrapper.model = MarkupLMModel.from_pretrained(MarkupLMWrapper.pretrained_path).to(device)
+            MarkupLMWrapper.model = MarkupLMModel.from_pretrained(path).to(device)
             MarkupLMWrapper.model.eval()
 
         self.observation_space = gym.spaces.Box(
             low=0,
             high=1,
-            shape=(MarkupLMWrapper.processor.tokenizer.model_max_length,),
+            shape=(MarkupLMWrapper.model.config.hidden_size,),
             dtype=np.float32
         )
 
@@ -132,6 +131,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     ITER = None
     NUM_DEMOS = None
     EMBED_STATES = None
+    EMBED_PATH = None
 
     def __init__(self, env_id, _):
         assert NUM_INSTANCES == 1, "Only supporting 1 concurrent env with webshop at the moment"
@@ -141,7 +141,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         self._env = WebAgentDreamDOMEnv(window_height=self.WINDOW_HEIGHT, window_width=self.WINDOW_WIDTH, scroll_amount=self.SCROLL_AMOUNT, scroll_time=self.SCROLL_TIME)
 
         if self.EMBED_STATES:
-            self._env = MarkupLMWrapper(self._env)
+            self._env = MarkupLMWrapper(self._env, path=self.EMBED_PATH)
 
         self.observation_space = gym.spaces.Dict({
             "observation": self._env.observation_space,
@@ -172,6 +172,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.USE_SCREENSHOT = config.get("use_screenshot", False)
         cls.NUM_DEMOS = config.get("num_demos", 0)
         cls.EMBED_STATES = config.get("embed_states", False)
+        cls.EMBED_PATH = config.get("embed_path", None)
 
 
     @classmethod

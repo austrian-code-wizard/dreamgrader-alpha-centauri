@@ -1,7 +1,7 @@
 {
   "environment": {
     "type": "webshop",
-    "max_steps": 5,
+    "max_steps": 6,
     "num_train": 50000,
     "num_test": 1024,
     "num_items": 6,
@@ -12,7 +12,8 @@
     "num_actions": 6,
     "use_screenshot": false,
     "num_demos": 0,
-    "embed_states": true
+    "embed_states": true,
+    "embed_path": "microsoft/markuplm-base"
   },
   "instruction_agent": {
     "type": "learned",
@@ -29,7 +30,10 @@
             "use_buffer": false,
             "use_pool": false,
             "final_relu": true,
-            "unfreeze_layers": []
+            "unfreeze_layers": [],
+            "n_layers": 1,
+            "heads": 4,
+            "dropout": 0.0
           }
         },
         "trajectory_embedder": {
@@ -43,7 +47,10 @@
             "use_buffer": false,
             "use_pool": false,
             "final_relu": true,
-            "unfreeze_layers": []
+            "unfreeze_layers": [],
+            "n_layers": 1,
+            "heads": 4,
+            "dropout": 0.0
           }
         }
       }
@@ -76,7 +83,10 @@
             "use_buffer": false,
             "use_pool": false,
             "final_relu": true,
-            "unfreeze_layers": []
+            "unfreeze_layers": [],
+            "n_layers": 1,
+            "heads": 4,
+            "dropout": 0.0
           }
         }
       }
