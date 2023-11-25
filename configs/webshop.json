@@ -1,10 +1,10 @@
 {
   "environment": {
     "type": "webshop",
-    "max_steps": 6,
+    "max_steps": 3,
     "num_train": 50000,
     "num_test": 1024,
-    "num_items": 6,
+    "num_items": 3,
     "window_height": 540,
     "window_width": 960,
     "scroll_amount": 270,
@@ -13,7 +13,9 @@
     "use_screenshot": false,
     "num_demos": 0,
     "embed_states": true,
-    "embed_path": "microsoft/markuplm-base"
+    "embed_path": "microsoft/markuplm-base",
+    "return_n": 3,
+    "num_random": 3
   },
   "instruction_agent": {
     "type": "learned",
@@ -38,7 +40,7 @@
         },
         "trajectory_embedder": {
           "penalty": 0.1,
-          "decoder_output_dim": 6
+          "decoder_output_dim": 3
         },
         "transition_embedder": {
           "reward_embed_dim": 32,

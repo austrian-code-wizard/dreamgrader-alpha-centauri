@@ -132,13 +132,21 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     NUM_DEMOS = None
     EMBED_STATES = None
     EMBED_PATH = None
+    RETURN_N = None
+    NUM_RANDOM = None
 
     def __init__(self, env_id, _):
         assert NUM_INSTANCES == 1, "Only supporting 1 concurrent env with webshop at the moment"
         super().__init__(env_id, WebshopObservation)
         self._steps = 0
         
-        self._env = WebAgentDreamDOMEnv(window_height=self.WINDOW_HEIGHT, window_width=self.WINDOW_WIDTH, scroll_amount=self.SCROLL_AMOUNT, scroll_time=self.SCROLL_TIME)
+        self._env = WebAgentDreamDOMEnv(
+            window_height=self.WINDOW_HEIGHT,
+            window_width=self.WINDOW_WIDTH,
+            scroll_amount=self.SCROLL_AMOUNT,
+            scroll_time=self.SCROLL_TIME,
+            return_n=self.RETURN_N,
+            num_random=self.NUM_RANDOM)
 
         if self.EMBED_STATES:
             self._env = MarkupLMWrapper(self._env, path=self.EMBED_PATH)
@@ -173,6 +181,8 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.NUM_DEMOS = config.get("num_demos", 0)
         cls.EMBED_STATES = config.get("embed_states", False)
         cls.EMBED_PATH = config.get("embed_path", None)
+        cls.RETURN_N = config.get("return_n", 1)
+        cls.NUM_RANDOM = config.get("num_random", 0)
 
 
     @classmethod
