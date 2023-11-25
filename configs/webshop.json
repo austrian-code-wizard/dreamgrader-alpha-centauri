@@ -1,7 +1,7 @@
 {
   "environment": {
     "type": "webshop",
-    "max_steps": 3,
+    "max_steps": 5,
     "num_train": 50000,
     "num_test": 1024,
     "num_items": 3,
@@ -15,7 +15,7 @@
     "embed_states": true,
     "embed_path": "microsoft/markuplm-base",
     "return_n": 3,
-    "num_random": 3
+    "num_random": 0
   },
   "instruction_agent": {
     "type": "learned",

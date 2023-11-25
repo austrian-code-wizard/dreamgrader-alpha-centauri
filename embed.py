@@ -209,10 +209,19 @@ class TrajectoryEmbedder(Embedder, relabel.RewardLabeler):
         # HACK: This is just the env_ids now
         if isinstance(trajectories[0][0].state.env_id, int):
             env_ids = [traj[0].state.env_id for traj in trajectories]
+            id_contexts = torch.tensor(env_ids)
         elif isinstance(trajectories[0][0].state.env_id, list):
             # Assume that correct env_ids are always shuffled
-            env_ids = [traj[0].state.env_id[0] for traj in trajectories]
-        id_contexts = torch.tensor(env_ids)
+            env_ids = [traj[0].state.env_id for traj in trajectories]
+            max_id = max([max(ids) for ids in env_ids])
+            # Create a one-hot encoding of the env_ids
+            id_contexts = torch.zeros(len(env_ids), max_id + 1)
+            for i, ids in enumerate(env_ids):
+                id_contexts[i, ids] = 1
+        else:
+            raise ValueError("Unsupported env_id type {}".format(
+                trajectories[0][0].state.env_id))
+
         #id_contexts = self._id_embedder(
         #        torch.tensor([traj[0].state.env_id for traj in trajectories]))
 
@@ -235,15 +244,28 @@ class TrajectoryEmbedder(Embedder, relabel.RewardLabeler):
         del trajectories
 
         # (batch_size, seq_len, 2)
+        batch, seq_len, _ = all_transition_contexts.shape
         decoder_logits = self._decoder_head(all_transition_contexts)
-        decoder_distribution = td.Categorical(logits=decoder_logits)
         # We want to maximize \sum_t E[log q(z | tau^exp_{:t})]
         # Repeat to be (batch_size, seq_len)
-        id_contexts = id_contexts.unsqueeze(-1).expand(
-                -1, all_transition_contexts.shape[1])
-        # (batch_size, seq_len)
-        decoder_loss = -decoder_distribution.log_prob(id_contexts)
+        if len(id_contexts.shape) == 1:
+            decoder_distribution = td.Categorical(logits=decoder_logits)
+            id_contexts = id_contexts.unsqueeze(-1).expand(
+                    -1, all_transition_contexts.shape[1])
+            # (batch_size, seq_len)
+            decoder_loss = -decoder_distribution.log_prob(id_contexts)
+        else:
+            # (batch_size, seq_len, env_id_dim)
+            id_contexts = id_contexts.unsqueeze(1).expand(
+                    -1, all_transition_contexts.shape[1], -1)
+
+            # Compute loss for each id
+            decoder_logits = decoder_logits[:,:,:id_contexts.shape[-1]]
+            decoder_loss = -F.log_softmax(decoder_logits, dim=-1)
+            decoder_loss = torch.sum(decoder_loss * id_contexts, dim=-1)
+
         decoder_loss = (decoder_loss * mask).sum() / mask.sum()
+
         losses = {
             "decoder_loss": decoder_loss,
             # No need for info bottleneck
@@ -296,13 +318,30 @@ class TrajectoryEmbedder(Embedder, relabel.RewardLabeler):
         id_contexts, all_transition_contexts, _, mask = self._compute_contexts(
                 trajectories)
 
-        # Compute rewards as E[log q(y | tau_{:t + 1}) - log q(y | tau_{:t})]
-        # (batch_size, seq_len, 2)
+        batch, seq_len, _ = all_transition_contexts.shape
         decoder_logits = self._decoder_head(all_transition_contexts)
-        decoder_distribution = td.Categorical(logits=decoder_logits)
         # (batch_size, seq_len)
-        decoder_log_probs = decoder_distribution.log_prob(
-                id_contexts.unsqueeze(-1).expand(-1, decoder_logits.shape[1]))
+        if len(id_contexts.shape) == 1:
+            # Compute rewards as E[log q(y | tau_{:t + 1}) - log q(y | tau_{:t})]
+            # (batch_size, seq_len, 2)
+            decoder_distribution = td.Categorical(logits=decoder_logits)
+            decoder_log_probs = decoder_distribution.log_prob(
+                    id_contexts.unsqueeze(-1).expand(-1, decoder_logits.shape[1]))
+        else:
+            id_contexts = id_contexts.clone()
+
+            # Need to ignore masked env ids
+            id_contexts[id_contexts == 0] = torch.inf
+            id_contexts = id_contexts.unsqueeze(1).expand(
+                    -1, all_transition_contexts.shape[1], -1)
+
+            # Calculate log probs for each id
+            decoder_logits = decoder_logits[:,:,:id_contexts.shape[-1]]
+            decoder_log_probs = F.log_softmax(decoder_logits, dim=-1)
+
+            # We use the max prob over correct env ids
+            decoder_log_probs = torch.max((decoder_log_probs * id_contexts), dim=-1).values
+
         # Add penalty
         rewards = (decoder_log_probs[:, 1:] -
                    decoder_log_probs[:, :-1] - self._penalty)
