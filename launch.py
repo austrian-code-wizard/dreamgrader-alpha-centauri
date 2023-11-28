@@ -8,7 +8,7 @@ script = """\
 #SBATCH --time=300:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=128G
+#SBATCH --mem=164G
 
 # only use the following on partition with GPUs
 #SBATCH --gres=gpu:1

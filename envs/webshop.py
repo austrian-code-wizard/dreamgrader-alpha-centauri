@@ -129,11 +129,13 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     SCROLL_TIME = None
     NUM_ACTIONS = None
     ITER = None
+    TEST = False
     NUM_DEMOS = None
     EMBED_STATES = None
     EMBED_PATH = None
     RETURN_N = None
     NUM_RANDOM = None
+    SHUFFLE_PRODUCTS = None
 
     def __init__(self, env_id, _):
         assert NUM_INSTANCES == 1, "Only supporting 1 concurrent env with webshop at the moment"
@@ -146,7 +148,8 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
             scroll_amount=self.SCROLL_AMOUNT,
             scroll_time=self.SCROLL_TIME,
             return_n=self.RETURN_N,
-            num_random=self.NUM_RANDOM)
+            num_random=self.NUM_RANDOM,
+            shuffle_products=self.SHUFFLE_PRODUCTS)
 
         if self.EMBED_STATES:
             self._env = MarkupLMWrapper(self._env, path=self.EMBED_PATH)
@@ -172,7 +175,6 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.NUM_TEST = config.get("num_test", 1000)
         cls.WINDOW_WIDTH = config.get("window_width", 960)
         cls.WINDOW_HEIGHT = config.get("window_height", 540)
-        cls.NUM_ITEMS = config.get("num_items", 15)
         cls.QUANTIZE = config.get("quantize", None)
         cls.SCROLL_AMOUNT = config.get("scroll_amount", 180)
         cls.SCROLL_TIME = config.get("scroll_time", 150)
@@ -183,6 +185,8 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
         cls.EMBED_PATH = config.get("embed_path", None)
         cls.RETURN_N = config.get("return_n", 1)
         cls.NUM_RANDOM = config.get("num_random", 0)
+        cls.NUM_ITEMS = cls.RETURN_N + cls.NUM_RANDOM
+        cls.SHUFFLE_PRODUCTS = config.get("shuffle_products", True)
 
 
     @classmethod
@@ -201,15 +205,27 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
     def set_iter(cls, iter):
         cls.ITER = iter
 
+    @classmethod
+    def close(_):
+        WebAgentDreamDOMEnv.close()
+
+    @classmethod
+    def set_test(cls, test):
+        cls.TEST = test
+
     def is_demo(self):
-        return True if self.ITER is not None and self.ITER < self.NUM_DEMOS else False
+        return True if self.ITER < self.NUM_DEMOS else False
 
     def get_demo(self):
         if self.exploitation:
-            return torch.tensor(self.env_id).to("cpu") # Return correct answer
+            if isinstance(self.env_id[0], int):
+                return torch.tensor(self.env_id).to("cpu")
+            return torch.tensor([id[0] for id in self.env_id]).to("cpu") # Return correct answer
         elif self._steps == 0:
-            return [1] # Search items on initial step
-        return [0] # End episode on results page
+            return [0] # Search items on initial step
+        if isinstance(self.env_id[0], int):
+            return [id + 2 for id in self.env_id] # Look at the correct answer on subsequent steps
+        return [id[0] + 2 for id in self.env_id] # Look at the correct answer on subsequent steps
 
     def _step(self, action):
         # print(f"Action: {action}")
@@ -232,7 +248,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
             return [{"observation": torch.zeros((1)) if self.EMBED_STATES else "", "question": ""}]
         self._steps = 0
         start = time.time()
-        state, _ = self._env.reset(seed=self._env_id[0])
+        state, _ = self._env.reset(goal_id=self._env_id[0], seed=self.ITER, is_test=self.TEST)
         # print(f"Time to reset: {time.time() - start}")
         self._questions = [state["instruction_text"]]
 
@@ -250,7 +266,7 @@ class WebShopMetaEnv(meta_exploration.MetaExplorationEnv):
 
     def render(self, mode=None):
         imgs = []
-        img = self._env.screenshot
+        img = self._env.render()
         img = render.Render(img)
         img.write_text("Underlying env ID: {}".format(self._env_id[0]))
         img.write_text(f"Q: {self.questions[0]}")

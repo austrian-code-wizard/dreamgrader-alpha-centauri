@@ -1,21 +1,21 @@
 {
   "environment": {
     "type": "webshop",
-    "max_steps": 5,
+    "max_steps": 10,
     "num_train": 50000,
     "num_test": 1024,
-    "num_items": 3,
-    "window_height": 540,
-    "window_width": 960,
+    "window_height": 1200,
+    "window_width": 400,
     "scroll_amount": 270,
     "scroll_time": 100,
     "num_actions": 6,
     "use_screenshot": false,
-    "num_demos": 0,
+    "num_demos": 2000,
     "embed_states": true,
     "embed_path": "microsoft/markuplm-base",
-    "return_n": 3,
-    "num_random": 0
+    "return_n": 30,
+    "num_random": 0,
+    "shuffle_products": false
   },
   "instruction_agent": {
     "type": "learned",
@@ -23,7 +23,7 @@
       "epsilon_schedule": {
         "begin": 1.0,
         "end": 0.05,
-        "total_steps": 100000
+        "total_steps": 130000
       },
       "embedder": {
         "obs_embedder": {
@@ -40,7 +40,7 @@
         },
         "trajectory_embedder": {
           "penalty": 0.1,
-          "decoder_output_dim": 3
+          "decoder_output_dim": 30
         },
         "transition_embedder": {
           "reward_embed_dim": 32,
@@ -58,8 +58,8 @@
       }
     },
     "buffer": {
-      "sequence_length": 6,
-      "max_buffer_size": 10000,
+      "sequence_length": 10,
+      "max_buffer_size": 8000,
       "store_on_cpu": true
     },
     "update_freq": 4,
@@ -74,7 +74,7 @@
       "epsilon_schedule": {
         "begin": 1.0,
         "end": 0.05,
-        "total_steps": 100000
+        "total_steps": 130000
       },
       "embedder": {
         "experience_embedder": {
@@ -94,8 +94,8 @@
       }
     },
     "buffer": {
-      "sequence_length": 6,
-      "max_buffer_size": 10000,
+      "sequence_length": 10,
+      "max_buffer_size": 8000,
       "store_on_cpu": true
     },
     "min_buffer_size": 4000,

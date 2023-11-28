@@ -61,10 +61,10 @@ class MetaExplorationEnv(abc.ABC, gym.Env):
         if wrapper is None:
             wrapper = lambda state: torch.tensor(state)
 
-        if iter and not test and hasattr(cls, "set_iter"):
+        if iter and hasattr(cls, "set_iter"):
             cls.set_iter(iter)
-        elif hasattr(cls, "set_iter"):
-            cls.set_iter(None)
+        if hasattr(cls, "set_test"):
+            cls.set_test(test)
 
         random = np.random.RandomState(seed)
         train_ids, test_ids = cls.env_ids()

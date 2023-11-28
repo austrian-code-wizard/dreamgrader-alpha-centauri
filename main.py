@@ -418,8 +418,8 @@ def main():
             test_exploration_lengths = []
             trajectory_embedder.use_ids(False)
             clear_buffers()
-            for test_index in tqdm.tqdm(range(256)):
-                exploration_env = create_env(test_index // NUM_INSTANCES, test=True)
+            for test_index in tqdm.tqdm(range(128)):
+                exploration_env = create_env(test_index // NUM_INSTANCES, test=True, iter=test_index)
                 exploration_episode, exploration_render = run_episode(
                         env_class.instruction_wrapper()(
                                 exploration_env, [],
@@ -492,8 +492,8 @@ def main():
             os.makedirs(visualize_dir, exist_ok=True)
             clear_buffers()
             train_no_eps_rewards = []
-            for train_index in tqdm.tqdm(range(64)):
-                exploration_env = create_env(train_index // NUM_INSTANCES)
+            for train_index in tqdm.tqdm(range(32)):
+                exploration_env = create_env(train_index // NUM_INSTANCES, test=True, iter=train_index)
                 # Test flags here only refer to making agent act with test flag and
                 # not test split environments
                 exploration_episode, exploration_render = run_episode(
@@ -646,5 +646,7 @@ if __name__ == '__main__':
 
         for instance in INSTANCES:
             instance.close()
+
+        webshop.WebShopMetaEnv.close() 
 
         raise e

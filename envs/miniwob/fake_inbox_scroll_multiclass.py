@@ -333,6 +333,7 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
     TARGET_FEATURES = None
 
     ITER = None
+    TEST = False
     SCREENSHOT_CACHE = {}
     DOM_CACHE = {}
     NUM_ACTIONS_WITH_BACK = 6
@@ -434,9 +435,12 @@ class FakeInboxScrollMulticlassMetaEnv(meta_exploration.MetaExplorationEnv):
     def set_iter(cls, iter):
         cls.ITER = iter
 
+    @classmethod
+    def set_test(cls, test):
+        cls.TEST = test
 
     def is_demo(self):
-        return True if self.ITER is not None and self.ITER < self.NUM_DEMOS else False
+        return True if self.ITER < self.NUM_DEMOS else False
 
 
     def get_demo(self):
